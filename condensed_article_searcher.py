@@ -6,6 +6,17 @@ from collections import defaultdict
 article_to_parent = {}
 
 markup_link_pattern = re.compile(r'\[\[([^|\]]{1,256})(\|[^\]]{1,256})?\]\]', re.I)
+# can be 1., - + * for leading items
+# also can have leading spaces
+# but how much of the text do we take? all of it?
+# take until newline seems like a reasonable strategy
+list_item_pattern = re.compile(r'^\s*([*-+]+|\d+\.)\s+([^\n]+)$', re.I | re.M)
+# Table markup parser, goal is to extract only the table items
+# Do the easy thing and just look for |-
+# can either be a single line (|| delimited) or a line for each item (| start)
+table_row_pattern = re.compile(r'^\|-\n((\|\s+[^\n]+)+)$', re.I | re.M)
+
+style_eliminator_pattern = re.compile(r'^\|\s+style=[^|]+\|(.+)$', re.I)
 
 
 
@@ -18,10 +29,12 @@ def sha256digest(string):
 title_dict = defaultdict(lambda: set())
 longest_title = ''
 longest_record = None
+total_list_items = 0
 def check_record(record, cc):
     global title_dict
     global longest_title
     global longest_record
+    global total_list_items
 #    title_sha = sha256digest(record['title'])
     # Parse all [[subreferences]] contained in article
     if record['page'].startswith('"{{Not English'):
@@ -35,6 +48,41 @@ def check_record(record, cc):
         return
     for match in re.finditer(markup_link_pattern, page):
         title_dict[match.group(1).strip().lower()].add(title)
+    for match in re.finditer(list_item_pattern, page):
+        # Check to see if the match would also contain markup link
+        if markup_link_pattern.match(page):
+            continue
+        total_list_items += 1
+    print('title: {}'.format(title))
+    for match in re.finditer(table_row_pattern, page):
+        raw_row = match.group(1)
+        # could start with '| style="'
+        style_clause_match = style_eliminator_pattern.match(raw_row)
+        if style_clause_match is not None:
+#            import pdb; pdb.set_trace()
+            raw_row = style_clause_match.group(1)
+        # the raw_row is gonna start with (| and whitespace)
+        trimmed_row = raw_row.lstrip('|')
+        # split by ||
+        components = trimmed_row.split('||')
+        # ignore special stuff? |-
+        # | Total || {{bartable|100||2||background:grey}}
+        normalized_components = []
+        for comp in components:
+            norm = comp.strip().lower()
+#            if norm.startswith('{{'):
+#                continue
+            normalized_components.append(norm)
+#            split_bar = norm.split('|')
+#            if len(split_bar) == 2:
+#                normalized_components.append(split_bar[1])
+#            else:
+#                normalized_components.append(norm)
+        print(normalized_components)
+#        import pdb; pdb.set_trace()
+#        print(match.group(2), match.group(0))
+#        import pdb; pdb.set_trace()
+
 
 #    if 'fred flintstone' in record['title'].lower():
 #        print(record)
@@ -58,7 +106,8 @@ for cc in '0123456789abcdef':
                 count += 1
             if count % 1000000 == 0 and i == 0:
                 print('checked: {}'.format(count))
-    with open('indexes/{}.txt'.format(cc), 'w') as index_file:
-        for t_title in sorted(title_dict):
-            index_file.write('{}\n'.format(json.dumps({'t': t_title, 'as': list(title_dict[t_title])})))
+                print('total list items: {}'.format(total_list_items))
+#    with open('indexes/{}.txt'.format(cc), 'w') as index_file:
+#        for t_title in sorted(title_dict):
+#            index_file.write('{}\n'.format(json.dumps({'t': t_title, 'as': list(title_dict[t_title])})))
 

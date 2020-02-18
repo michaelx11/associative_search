@@ -10,7 +10,7 @@ markup_link_pattern = re.compile(r'\[\[([^|\]]{1,256})(\|[^\]]{1,256})?\]\]', re
 # also can have leading spaces
 # but how much of the text do we take? all of it?
 # take until newline seems like a reasonable strategy
-list_item_pattern = re.compile(r'^\s*([*-+]+|\d+\.)\s+([^\n]+)$', re.I | re.M)
+list_item_pattern = re.compile(r'^\s*([*-+]+|\d+\.)\s*([^\n]+)$', re.I | re.M)
 # Table markup parser, goal is to extract only the table items
 # Do the easy thing and just look for |-
 # can either be a single line (|| delimited) or a line for each item (| start)
@@ -46,14 +46,15 @@ def check_record(record, cc):
     title_hash = sha256digest(title)
     if not title_hash.startswith(cc):
         return
+    print('title: {}'.format(title))
     for match in re.finditer(markup_link_pattern, page):
         title_dict[match.group(1).strip().lower()].add(title)
     for match in re.finditer(list_item_pattern, page):
         # Check to see if the match would also contain markup link
         if markup_link_pattern.match(page):
             continue
+        print('li: {}'.format(match.group(2).encode('utf-8')))
         total_list_items += 1
-    print('title: {}'.format(title))
     for match in re.finditer(table_row_pattern, page):
         raw_row = match.group(1)
         # could start with '| style="'

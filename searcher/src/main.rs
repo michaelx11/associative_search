@@ -6,6 +6,7 @@ use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -18,6 +19,7 @@ where P: AsRef<Path>, {
 }
 
 fn main() {
+    let mut preloaded_lines: Vec<Vec<String>> = Vec::new();
     // first arg: filename, remaining args go into search set
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
@@ -31,6 +33,7 @@ fn main() {
     eprintln!("filename: {:?}, threshold: {:?}, search set: {:?}", filename, threshold, search_set);
     // map[item]-> map[article]->title
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+    let now = Instant::now();
     // Need a mapping from items to article
     if let Ok(lines) = read_lines(filename) {
         for line in lines {
@@ -40,18 +43,29 @@ fn main() {
                 let pair = v.as_array().unwrap();
                 let title = pair[0].as_str().unwrap();
                 let article_array = pair[1].as_array().unwrap();
-                // Iterate through items in search set
-                for item in search_set.iter() {
-                    let item_key = item.to_string();
-                    // SELECTION CRITERIA - does title match item?
-                    if title.contains(&item_key) {
-                        let entry = association_dict.entry(item_key).or_insert_with(HashMap::new);
-                        // If so, go ahead and add articles->title
-                        for article in article_array.iter() {
-                            let article_string = article.as_str().unwrap();
-                            entry.insert(article_string.to_string(), title.to_string());
-                        }
-                    }
+                let mut article_vec = vec![title.to_string()];
+                for article in article_array.iter() {
+                    let article_string = article.as_str().unwrap();
+                    article_vec.push(article_string.to_string());
+                }
+                preloaded_lines.push(article_vec);
+            }
+        }
+    }
+    println!("finished preloading in {}s", now.elapsed().as_secs());
+    let search_now = Instant::now();
+    for article_vec in preloaded_lines {
+        let title = article_vec[0].to_string();
+        // Iterate through items in search set
+        for item in search_set.iter() {
+            let item_key = item.to_string();
+            // SELECTION CRITERIA - does title match item?
+            if title.contains(&item_key) {
+                let entry = association_dict.entry(item_key).or_insert_with(HashMap::new);
+                // If so, go ahead and add articles->title
+                for article in article_vec[1..article_vec.len()].iter() {
+                    let article_string = article.as_str();
+                    entry.insert(article_string.to_string(), title.to_string());
                 }
             }
         }
@@ -74,7 +88,5 @@ fn main() {
             }
         }
     }
-//    let mut d = br#"{"some": ["key", "value", 2]}"#.to_vec();
-//    let v: simd_json::BorrowedValue = simd_json::to_borrowed_value(&mut d).unwrap();
-//    println!("Hello, world!");
+    println!("finished searching in {}s", search_now.elapsed().as_secs());
 }

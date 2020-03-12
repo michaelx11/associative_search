@@ -1,5 +1,6 @@
 extern crate serde_json;
 extern crate simd_json; 
+extern crate searcher;
 
 use std::collections::HashMap;
 use std::env;
@@ -10,12 +11,60 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+use searcher::stemmer;
+
 // The output is wrapped in a Result to allow matching on errors
 // Returns an Iterator to the Reader of the lines of the file.
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
 where P: AsRef<Path>, {
     let file = File::open(filename)?;
     Ok(io::BufReader::new(file).lines())
+}
+
+fn find_associations(search_set: &[String], preloaded_lines: &[Vec<String>]) -> HashMap<String, HashMap<String, String>> {
+    // map[item]-> map[article]->title
+    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+    for article_vec in preloaded_lines {
+        let title = article_vec[0].to_string();
+        // Iterate through items in search set
+        for item in search_set.iter() {
+            let item_key = item.to_string();
+            // SELECTION CRITERIA - does title match item?
+            if title.contains(&item_key) {
+                let entry = association_dict.entry(item_key).or_insert_with(HashMap::new);
+                // If so, go ahead and add articles->title
+                for article in article_vec[1..article_vec.len()].iter() {
+                    let article_string = article.as_str();
+                    entry.insert(article_string.to_string(), title.to_string());
+                }
+            }
+        }
+    }
+    return association_dict;
+}
+
+fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>, preloaded_lines: &[Vec<String>]) -> HashMap<String, HashMap<String, String>> {
+    // map[item]-> map[article]->title
+    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+    for article_vec in preloaded_lines {
+        let title = article_vec[0].to_string();
+        // Iterate through items in search set
+        for (term, subassociations) in associations.iter() {
+            for (_, match_title) in subassociations.iter() {
+                let title_match_key = match_title.to_string();
+                // SELECTION CRITERIA - does title match item?
+                if title.contains(&title_match_key) {
+                    let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
+                    // If so, go ahead and add articles->title
+                    for article in article_vec[1..article_vec.len()].iter() {
+                        let article_string = article.as_str();
+                        entry.insert(article_string.to_string(), title.to_string());
+                    }
+                }
+            }
+        }
+    }
+    return association_dict;
 }
 
 fn main() {
@@ -31,8 +80,6 @@ fn main() {
     // Search set is a list of search items
     let search_set = &args[3..args.len()];
     eprintln!("filename: {:?}, threshold: {:?}, search set: {:?}", filename, threshold, search_set);
-    // map[item]-> map[article]->title
-    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     let now = Instant::now();
     // Need a mapping from items to article
     if let Ok(lines) = read_lines(filename) {
@@ -54,22 +101,14 @@ fn main() {
     }
     println!("finished preloading in {}s", now.elapsed().as_secs());
     let search_now = Instant::now();
-    for article_vec in preloaded_lines {
-        let title = article_vec[0].to_string();
-        // Iterate through items in search set
-        for item in search_set.iter() {
-            let item_key = item.to_string();
-            // SELECTION CRITERIA - does title match item?
-            if title.contains(&item_key) {
-                let entry = association_dict.entry(item_key).or_insert_with(HashMap::new);
-                // If so, go ahead and add articles->title
-                for article in article_vec[1..article_vec.len()].iter() {
-                    let article_string = article.as_str();
-                    entry.insert(article_string.to_string(), title.to_string());
-                }
-            }
-        }
+    let mut first_level = find_associations(&search_set, &preloaded_lines);
+    println!("finished first level in {}s", search_now.elapsed().as_secs());
+    for (term, map) in &first_level {
+        println!("Term: {}, {:?}", term, map);
     }
+    let second_stage = Instant::now();
+    let mut association_dict = subfind_associations(&first_level, &preloaded_lines);
+    println!("finished second level in {}s", second_stage.elapsed().as_secs());
     // Finally, we check if we got any good associations
     let mut association_count_dict: HashMap<String, usize> = HashMap::new();
     for item in search_set.iter() {
@@ -88,5 +127,4 @@ fn main() {
             }
         }
     }
-    println!("finished searching in {}s", search_now.elapsed().as_secs());
 }

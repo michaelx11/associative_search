@@ -1,6 +1,7 @@
 #[macro_use]
 
 pub mod stemmer;
+pub mod indexer;
 
 #[cfg(test)]
 mod tests {

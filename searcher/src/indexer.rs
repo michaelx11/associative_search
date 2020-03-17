@@ -1,10 +1,15 @@
+extern crate fst;
 extern crate serde_json;
 extern crate simd_json; 
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufRead};
+use std::io;
+use std::io::BufRead;
 use std::path::Path;
+use std::time::{Duration, Instant};
+
+use fst::{IntoStreamer, Streamer, Map, MapBuilder};
 
 use serde_json::Value;
 
@@ -19,12 +24,18 @@ where P: AsRef<Path>, {
 }
 
 pub struct StemmedIndex {
-    // HashMap
-    index_map: HashMap<String, Vec<u32>>,
+    // FST file
+    fst_file: String,
     // K threshold
     max_group: usize,
     // Original Vector
     orig_vec: Vec<Vec<String>>
+}
+
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+pub struct StemChunk {
+    stem: String,
+    index: u64
 }
 
 /**
@@ -33,14 +44,19 @@ pub struct StemmedIndex {
  *
  */
 pub fn generate_stemmed_index(file_path: &str, max_group: usize) -> StemmedIndex {
-    let index_map: HashMap<String, Vec<u32>> = HashMap::new();
+
+    let fst_file = format!("{}.{}", file_path, "fst");
+    let mut wtr = io::BufWriter::new(File::create(&fst_file).unwrap());
+    let mut build = MapBuilder::new(wtr).unwrap();
     let orig_vec: Vec<Vec<String>> = Vec::new();
+    let mut chunk_vec: Vec<StemChunk> = Vec::new();
     let mut result_index = StemmedIndex{
-        index_map,
+        fst_file,
         max_group,
         orig_vec
     };
-    let mut counter: u32 = 0;
+    let mut counter: u64 = 0;
+    let process_start = Instant::now();
     if let Ok(lines) = read_lines(file_path) {
         for line in lines {
             if let Ok(entry) = line {
@@ -54,7 +70,6 @@ pub fn generate_stemmed_index(file_path: &str, max_group: usize) -> StemmedIndex
                 if stems.len() == 0 {
                     continue;
                 }
-
                 let mut article_vec = vec![title.to_string()];
                 for article in article_array.iter() {
                     let article_string = article.as_str().unwrap();
@@ -63,15 +78,32 @@ pub fn generate_stemmed_index(file_path: &str, max_group: usize) -> StemmedIndex
                 result_index.orig_vec.push(article_vec);
                 // For each stem, insert into 
                 for stem in stems {
-                    let entry = result_index.index_map.entry(stem.to_string()).or_insert_with(Vec::new);
-                    entry.push(counter);
+                    let stem_string = stem.to_string();
+                    chunk_vec.push(StemChunk{
+                        stem: stem_string,
+                        index: counter
+                    });
                 }
                 counter += 1;
-                if counter % 100000 == 0 {
+                if counter % 1000000 == 0 {
                     println!("counter: {}", counter);
                 }
             }
         }
     }
+    println!("Finished gathering stemmed chunks in: {} seconds", process_start.elapsed().as_secs());
+    let sort_start = Instant::now();
+    println!("Sorting now");
+    chunk_vec.sort();
+    println!("Finished sorting in: {} seconds", sort_start.elapsed().as_secs());
+
+    println!("Building fst");
+    let fst_start = Instant::now();
+    for stem_chunk in chunk_vec {
+        build.insert(stem_chunk.stem, stem_chunk.index).unwrap();
+    }
+    println!("Finished building fst: {} seconds", fst_start.elapsed().as_secs());
+    build.finish().unwrap();
+    println!("Finished writing fst: {} seconds (cumulative)", fst_start.elapsed().as_secs());
     return result_index;
 }

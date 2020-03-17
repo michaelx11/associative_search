@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use searcher::stemmer;
+use searcher::indexer;
 
 // The output is wrapped in a Result to allow matching on errors
 // Returns an Iterator to the Reader of the lines of the file.
@@ -20,7 +20,6 @@ where P: AsRef<Path>, {
     let file = File::open(filename)?;
     Ok(io::BufReader::new(file).lines())
 }
-
 fn find_associations(search_set: &[String], preloaded_lines: &[Vec<String>]) -> HashMap<String, HashMap<String, String>> {
     // map[item]-> map[article]->title
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
@@ -68,7 +67,6 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
 }
 
 fn main() {
-    let mut preloaded_lines: Vec<Vec<String>> = Vec::new();
     // first arg: filename, remaining args go into search set
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
@@ -81,50 +79,52 @@ fn main() {
     let search_set = &args[3..args.len()];
     eprintln!("filename: {:?}, threshold: {:?}, search set: {:?}", filename, threshold, search_set);
     let now = Instant::now();
-    // Need a mapping from items to article
-    if let Ok(lines) = read_lines(filename) {
-        for line in lines {
-            if let Ok(entry) = line {
-                let mut mutable_bytes = entry.into_bytes();
-                let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
-                let pair = v.as_array().unwrap();
-                let title = pair[0].as_str().unwrap();
-                let article_array = pair[1].as_array().unwrap();
-                let mut article_vec = vec![title.to_string()];
-                for article in article_array.iter() {
-                    let article_string = article.as_str().unwrap();
-                    article_vec.push(article_string.to_string());
-                }
-                preloaded_lines.push(article_vec);
-            }
-        }
-    }
-    println!("finished preloading in {}s", now.elapsed().as_secs());
-    let search_now = Instant::now();
-    let mut first_level = find_associations(&search_set, &preloaded_lines);
-    println!("finished first level in {}s", search_now.elapsed().as_secs());
-    for (term, map) in &first_level {
-        println!("Term: {}, {:?}", term, map);
-    }
-    let second_stage = Instant::now();
-    let mut association_dict = subfind_associations(&first_level, &preloaded_lines);
-    println!("finished second level in {}s", second_stage.elapsed().as_secs());
-    // Finally, we check if we got any good associations
-    let mut association_count_dict: HashMap<String, usize> = HashMap::new();
-    for item in search_set.iter() {
-        let item_key = item.to_string();
-        for (key, value) in association_dict.entry(item_key).or_insert_with(HashMap::new) {
-            let key_string = key.to_string();
-            association_count_dict.entry(key_string).and_modify(|e| {*e += 1}).or_insert(1);
-        }
-    }
-    for (assoc, count) in association_count_dict {
-        if count >= threshold {
-            for item in search_set.iter() {
-                let item_string = item.to_string();
-                let assoc_string = assoc.to_string();
-                println!("{}: {}", assoc, association_dict[&item_string].get(&assoc).unwrap_or(&"[NONE]".to_string()));
-            }
-        }
-    }
+    let index = indexer::generate_stemmed_index(filename, 2);
+    println!("finished indexing in {}s", now.elapsed().as_secs());
+//    // Need a mapping from items to article
+//    if let Ok(lines) = read_lines(filename) {
+//        for line in lines {
+//            if let Ok(entry) = line {
+//                let mut mutable_bytes = entry.into_bytes();
+//                let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
+//                let pair = v.as_array().unwrap();
+//                let title = pair[0].as_str().unwrap();
+//                let article_array = pair[1].as_array().unwrap();
+//                let mut article_vec = vec![title.to_string()];
+//                for article in article_array.iter() {
+//                    let article_string = article.as_str().unwrap();
+//                    article_vec.push(article_string.to_string());
+//                }
+//                preloaded_lines.push(article_vec);
+//            }
+//        }
+//    }
+//    println!("finished preloading in {}s", now.elapsed().as_secs());
+//    let search_now = Instant::now();
+//    let mut first_level = find_associations(&search_set, &preloaded_lines);
+//    println!("finished first level in {}s", search_now.elapsed().as_secs());
+//    for (term, map) in &first_level {
+//        println!("Term: {}, {:?}", term, map);
+//    }
+//    let second_stage = Instant::now();
+//    let mut association_dict = subfind_associations(&first_level, &preloaded_lines);
+//    println!("finished second level in {}s", second_stage.elapsed().as_secs());
+//    // Finally, we check if we got any good associations
+//    let mut association_count_dict: HashMap<String, usize> = HashMap::new();
+//    for item in search_set.iter() {
+//        let item_key = item.to_string();
+//        for (key, value) in association_dict.entry(item_key).or_insert_with(HashMap::new) {
+//            let key_string = key.to_string();
+//            association_count_dict.entry(key_string).and_modify(|e| {*e += 1}).or_insert(1);
+//        }
+//    }
+//    for (assoc, count) in association_count_dict {
+//        if count >= threshold {
+//            for item in search_set.iter() {
+//                let item_string = item.to_string();
+//                let assoc_string = assoc.to_string();
+//                println!("{}: {}", assoc, association_dict[&item_string].get(&assoc).unwrap_or(&"[NONE]".to_string()));
+//            }
+//        }
+//    }
 }

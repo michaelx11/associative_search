@@ -75,3 +75,21 @@ pub fn generate_stemmed_index(file_path: &str, max_group: usize) -> StemmedIndex
     }
     return result_index;
 }
+
+pub fn search_stemmed_index(term: &str, index: &StemmedIndex, max_group: usize) -> Vec<String> {
+    let mut result: Vec<String> = Vec::new();
+    let stems = stemmer::generate_stems(&term, max_group);
+    for stem in stems {
+        match index.index_map.get(&stem) {
+            Some(orig_indexes) => {
+                for orig_index in orig_indexes {
+                    for item in &(index.orig_vec[*orig_index as usize])[1..] {
+                        result.push(item.to_string());
+                    }
+                }
+            },
+            None => {}
+        }
+    }
+    return result;
+}

@@ -81,24 +81,8 @@ fn main() {
     let now = Instant::now();
     let index = indexer::generate_stemmed_index(filename, 2);
     println!("finished indexing in {}s", now.elapsed().as_secs());
-//    // Need a mapping from items to article
-//    if let Ok(lines) = read_lines(filename) {
-//        for line in lines {
-//            if let Ok(entry) = line {
-//                let mut mutable_bytes = entry.into_bytes();
-//                let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
-//                let pair = v.as_array().unwrap();
-//                let title = pair[0].as_str().unwrap();
-//                let article_array = pair[1].as_array().unwrap();
-//                let mut article_vec = vec![title.to_string()];
-//                for article in article_array.iter() {
-//                    let article_string = article.as_str().unwrap();
-//                    article_vec.push(article_string.to_string());
-//                }
-//                preloaded_lines.push(article_vec);
-//            }
-//        }
-//    }
+    let results = indexer::search_stemmed_index("cats-eye", &index, 2);
+    println!("Results: {:?}", results);
 //    println!("finished preloading in {}s", now.elapsed().as_secs());
 //    let search_now = Instant::now();
 //    let mut first_level = find_associations(&search_set, &preloaded_lines);

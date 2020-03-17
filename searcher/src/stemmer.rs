@@ -1,13 +1,18 @@
+
 use regex::Regex;
+
 
 /**
  * Given a search string, generate 
  */
 pub fn generate_stems(term: &str, k: usize) -> Vec<String> {
+    lazy_static! {
+        static ref nonalpha_re: Regex = Regex::new(r"[^\w\s]").unwrap(); 
+    }
     // Non-alphanumeric characters are removed
-    let nonalpha_re = Regex::new(r"[^\w\s]").unwrap();
     let alpha_only = nonalpha_re.replace_all(term, "");
     let alpha_only_lower = alpha_only.to_lowercase();
+//    let alpha_only_lower = term.to_lowercase();
     // split by whitespace
     let split = alpha_only_lower.split_whitespace();
     let mut words: Vec<String> = Vec::new();

@@ -114,6 +114,9 @@ pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex>
             }
         }
     }
+    // Sentinel value so we can query ranges by i, i+1
+    result_index.line_starts.push(byte_counter);
+
     println!("Finished gathering stemmed chunks in: {} seconds", process_start.elapsed().as_secs());
     let sort_start = Instant::now();
     println!("Sorting now");
@@ -164,9 +167,12 @@ pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex>
     return Some(result_index);
 }
 
+
 pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> Vec<String> {
     let mmap = unsafe { Mmap::map(&File::open(&(index.fst_file)).unwrap()).unwrap() };
     let map = Map::new(mmap).unwrap();
+
+    let association_file_map = unsafe { Mmap::map(&File::open(&(index.association_file)).unwrap()).unwrap() };
 
     let mut result: Vec<String> = Vec::new();
     let stems = stemmer::generate_stems(&term, max_group);
@@ -174,7 +180,19 @@ pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> Vec<S
         match map.get(&stem) {
             Some(fst_value_index) => {
                 for orig_file_line in &(index.fst_values)[fst_value_index as usize] {
-                    result.push(format!("{}", orig_file_line));
+                    let line_num: usize = *orig_file_line as usize;
+                    // Get byte offset from line_offsets
+                    let start_offset = (index.line_starts)[line_num] as usize;
+                    let end_offset = (index.line_starts)[line_num + 1] as usize;
+
+                    let mut byte_vec: Vec<u8> = association_file_map[start_offset..end_offset].iter().cloned().collect();
+                    let v: Value = simd_json::serde::from_slice(&mut byte_vec[..]).unwrap();
+                    let pair = v.as_array().unwrap();
+                    let title = pair[0].as_str().unwrap(); // unused but might be good for filtering
+                    let article_array = pair[1].as_array().unwrap();
+                    for article in article_array {
+                        result.push(article.to_string());
+                    }
                 }
             },
             None => {}

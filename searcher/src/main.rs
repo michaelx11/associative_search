@@ -81,8 +81,15 @@ fn main() {
     let now = Instant::now();
     let index = indexer::generate_fst_index(filename, 2).unwrap();
     println!("finished indexing in {}s", now.elapsed().as_secs());
-    let results = indexer::search_fst_index("hello", &index, 2);
-    println!("results: {:?}", results);
+    while true {
+        let mut line = String::new();
+        println!("Type search term, then enter>");
+        let stdin = io::stdin();
+        stdin.lock().read_line(&mut line).unwrap();
+        println!("Searching: {}", &line);
+        let results = indexer::search_fst_index(&line, &index, 2);
+        println!("Results: {:?}", results);
+    }
 //    // Need a mapping from items to article
 //    if let Ok(lines) = read_lines(filename) {
 //        for line in lines {

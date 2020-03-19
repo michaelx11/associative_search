@@ -2,7 +2,7 @@ extern crate fst;
 extern crate serde_json;
 extern crate simd_json; 
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io;
 use std::io::BufRead;
@@ -23,6 +23,19 @@ where P: AsRef<Path>, {
     Ok(io::BufReader::new(file).lines())
 }
 
+pub struct FstIndex {
+    // vector of fst_value -> orig_lines
+    fst_values: Vec<Vec<u64>>,
+    // Byte offsets of each line in original index file
+    line_starts: Vec<u64>,
+    // Original association file path
+    association_file: String,
+    // FST file path
+    fst_file: String,
+    // max grouping threshold
+    max_group: usize
+}
+
 pub struct StemmedIndex {
     // FST file
     fst_file: String,
@@ -36,6 +49,117 @@ pub struct StemmedIndex {
 pub struct StemChunk {
     stem: String,
     index: u64
+}
+
+/**
+ * Populates an index from a file with format:
+ * - ["text", ["a", "bunch", "of", "article", "titles", "containing", "text"]]
+ *
+ */
+pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex> {
+
+    let fst_file = format!("{}_{}.{}", "fst", file_path, "fst");
+    let mut wtr = io::BufWriter::new(File::create(&fst_file).unwrap());
+    let mut build = MapBuilder::new(wtr).unwrap();
+
+    let mut chunk_vec: Vec<StemChunk> = Vec::new();
+    let fst_values: Vec<Vec<u64>> = Vec::new();
+    let line_starts: Vec<u64> = Vec::new();
+    let association_file = file_path.to_string();
+
+    let mut result_index = FstIndex{
+        fst_values,
+        line_starts,
+        association_file,
+        fst_file,
+        max_group
+    };
+    let mut counter: u64 = 0;
+    let mut byte_counter: u64 = 0;
+    let mut fst_value_counter: u64 = 0;
+    let process_start = Instant::now();
+    if let Ok(lines) = read_lines(file_path) {
+        for line in lines {
+            if let Ok(entry) = line {
+                let mut mutable_bytes = entry.into_bytes();
+
+                result_index.line_starts.push(byte_counter);
+                byte_counter += (mutable_bytes.len() + 1) as u64; // + 1 for newline
+                let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
+                let pair = v.as_array().unwrap();
+                let title = pair[0].as_str().unwrap();
+                let article_array = pair[1].as_array().unwrap();
+                // Generate stems from title
+                let stems = stemmer::generate_stems(&title, max_group);
+                if stems.len() > 0 {
+                    // For each stem, insert into 
+                    for stem in stems {
+                        let stem_string = stem.to_string();
+                        chunk_vec.push(StemChunk{
+                            stem: stem_string,
+                            index: counter
+                        });
+                    }
+                }
+                // Always increment counter otherwise
+                counter += 1;
+                if counter % 1000000 == 0 {
+                    println!("counter: {}", counter);
+                }
+            } else {
+                println!("Error reading line!");
+                return None;
+            }
+        }
+    }
+    println!("Finished gathering stemmed chunks in: {} seconds", process_start.elapsed().as_secs());
+    let sort_start = Instant::now();
+    println!("Sorting now");
+    chunk_vec.sort();
+    println!("Finished sorting in: {} seconds", sort_start.elapsed().as_secs());
+
+    let mut merged_chunk_indices: VecDeque<Vec<u64>> = VecDeque::new();
+    let mut merged_chunk_stems: VecDeque<String> = VecDeque::new();
+
+    // There needs to be at least one value
+    let last_but_first = chunk_vec.pop().unwrap();
+    let mut current_indices: Vec<u64> = vec![last_but_first.index];
+    let mut current_stem: String = last_but_first.stem.to_string();
+
+    let merge_start = Instant::now();
+    println!("Merging indentical chunks");
+    // Start at the back of the chunk_vec and merge identical values
+    while chunk_vec.len() > 0 {
+        // Pop the last one
+        let popped = chunk_vec.pop().unwrap();
+        if popped.stem == current_stem {
+            current_indices.push(popped.index);
+        } else {
+            merged_chunk_stems.push_front(current_stem.to_string());
+            merged_chunk_indices.push_front(current_indices);
+            current_stem = popped.stem.to_string();
+            current_indices = vec![popped.index];
+        }
+    }
+    merged_chunk_stems.push_front(current_stem.to_string());
+    merged_chunk_indices.push_front(current_indices);
+
+    // Drain merged_chunk_indices into fst_values
+    result_index.fst_values.extend(merged_chunk_indices);
+    println!("Finished merge: {} seconds", merge_start.elapsed().as_secs());
+
+
+    println!("Building fst");
+    let fst_start = Instant::now();
+    let mut merged_counter = 0;
+    for stem in merged_chunk_stems {
+        build.insert(stem, merged_counter).unwrap();
+        merged_counter += 1;
+    }
+    println!("Finished building fst: {} seconds", fst_start.elapsed().as_secs());
+    build.finish().unwrap();
+    println!("Finished writing fst: {} seconds (cumulative)", fst_start.elapsed().as_secs());
+    return Some(result_index);
 }
 
 /**

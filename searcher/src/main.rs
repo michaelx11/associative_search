@@ -79,7 +79,7 @@ fn main() {
     let search_set = &args[3..args.len()];
     eprintln!("filename: {:?}, threshold: {:?}, search set: {:?}", filename, threshold, search_set);
     let now = Instant::now();
-    let index = indexer::generate_stemmed_index(filename, 2);
+    let index = indexer::generate_fst_index(filename, 2).unwrap();
     println!("finished indexing in {}s", now.elapsed().as_secs());
 //    // Need a mapping from items to article
 //    if let Ok(lines) = read_lines(filename) {

@@ -3,7 +3,7 @@ extern crate memmap;
 extern crate serde_json;
 extern crate simd_json; 
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque, HashSet};
 use std::fs::File;
 use std::io;
 use std::io::BufRead;
@@ -59,12 +59,13 @@ pub struct StemChunk {
  *
  */
 pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex> {
+    // stem map stores all stems and the indexes of articles they map to
+    let mut stem_map: BTreeMap<String, Vec<u64>> = BTreeMap::new();
 
     let fst_file = format!("{}_{}.{}", "fst", file_path, "fst");
     let mut wtr = io::BufWriter::new(File::create(&fst_file).unwrap());
     let mut build = MapBuilder::new(wtr).unwrap();
 
-    let mut chunk_vec: Vec<StemChunk> = Vec::new();
     let fst_values: Vec<Vec<u64>> = Vec::new();
     let line_starts: Vec<u64> = Vec::new();
     let association_file = file_path.to_string();
@@ -97,10 +98,8 @@ pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex>
                     // For each stem, insert into 
                     for stem in stems {
                         let stem_string = stem.to_string();
-                        chunk_vec.push(StemChunk{
-                            stem: stem_string,
-                            index: counter
-                        });
+                        let entry = stem_map.entry(stem_string).or_insert_with(Vec::new);
+                        entry.push(counter);
                     }
                 }
                 // Always increment counter otherwise
@@ -116,48 +115,13 @@ pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex>
     }
     // Sentinel value so we can query ranges by i, i+1
     result_index.line_starts.push(byte_counter);
-
     println!("Finished gathering stemmed chunks in: {} seconds", process_start.elapsed().as_secs());
-    let sort_start = Instant::now();
-    println!("Sorting now");
-    chunk_vec.sort();
-    println!("Finished sorting in: {} seconds", sort_start.elapsed().as_secs());
-
-    let mut merged_chunk_indices: VecDeque<Vec<u64>> = VecDeque::new();
-    let mut merged_chunk_stems: VecDeque<String> = VecDeque::new();
-
-    // There needs to be at least one value
-    let last_but_first = chunk_vec.pop().unwrap();
-    let mut current_indices: Vec<u64> = vec![last_but_first.index];
-    let mut current_stem: String = last_but_first.stem.to_string();
-
-    let merge_start = Instant::now();
-    println!("Merging indentical chunks");
-    // Start at the back of the chunk_vec and merge identical values
-    while chunk_vec.len() > 0 {
-        // Pop the last one
-        let popped = chunk_vec.pop().unwrap();
-        if popped.stem == current_stem {
-            current_indices.push(popped.index);
-        } else {
-            merged_chunk_stems.push_front(current_stem.to_string());
-            merged_chunk_indices.push_front(current_indices);
-            current_stem = popped.stem.to_string();
-            current_indices = vec![popped.index];
-        }
-    }
-    merged_chunk_stems.push_front(current_stem.to_string());
-    merged_chunk_indices.push_front(current_indices);
-
-    // Drain merged_chunk_indices into fst_values
-    result_index.fst_values.extend(merged_chunk_indices);
-    println!("Finished merge: {} seconds", merge_start.elapsed().as_secs());
-
 
     println!("Building fst");
     let fst_start = Instant::now();
     let mut merged_counter = 0;
-    for stem in merged_chunk_stems {
+    for (stem, orig_line_vec) in stem_map {
+        result_index.fst_values.push(orig_line_vec);
         build.insert(stem, merged_counter).unwrap();
         merged_counter += 1;
     }
@@ -173,6 +137,8 @@ pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> Vec<S
     let map = Map::new(mmap).unwrap();
 
     let association_file_map = unsafe { Mmap::map(&File::open(&(index.association_file)).unwrap()).unwrap() };
+
+    let mut article_set: HashSet<String> = HashSet::new();
 
     let mut result: Vec<String> = Vec::new();
     let stems = stemmer::generate_stems(&term, max_group);
@@ -191,14 +157,14 @@ pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> Vec<S
                     let title = pair[0].as_str().unwrap(); // unused but might be good for filtering
                     let article_array = pair[1].as_array().unwrap();
                     for article in article_array {
-                        result.push(article.to_string());
+                        article_set.insert(article.to_string());
                     }
                 }
             },
             None => {}
         }
     }
-    return result;
+    return article_set.iter().cloned().collect();
 }
 
 /**

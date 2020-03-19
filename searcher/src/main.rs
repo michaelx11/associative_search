@@ -79,7 +79,7 @@ fn main() {
     let search_set = &args[3..args.len()];
     eprintln!("filename: {:?}, threshold: {:?}, search set: {:?}", filename, threshold, search_set);
     let now = Instant::now();
-    let index = indexer::generate_fst_index(filename, 2).unwrap();
+    let index = indexer::generate_fst_index(filename, 1).unwrap();
     println!("finished indexing in {}s", now.elapsed().as_secs());
     while true {
         let mut line = String::new();
@@ -87,7 +87,7 @@ fn main() {
         let stdin = io::stdin();
         stdin.lock().read_line(&mut line).unwrap();
         println!("Searching: {}", &line);
-        let results = indexer::search_fst_index(&line, &index, 2);
+        let results = indexer::search_fst_index(&line, &index, 1);
         println!("Results: {:?}", results);
     }
 //    // Need a mapping from items to article

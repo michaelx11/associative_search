@@ -1,4 +1,5 @@
 extern crate fst;
+extern crate memmap;
 extern crate serde_json;
 extern crate simd_json; 
 
@@ -8,6 +9,7 @@ use std::io;
 use std::io::BufRead;
 use std::path::Path;
 use std::time::{Duration, Instant};
+use memmap::Mmap;
 
 use fst::{IntoStreamer, Streamer, Map, MapBuilder};
 
@@ -162,6 +164,25 @@ pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex>
     return Some(result_index);
 }
 
+pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> Vec<String> {
+    let mmap = unsafe { Mmap::map(&File::open(&(index.fst_file)).unwrap()).unwrap() };
+    let map = Map::new(mmap).unwrap();
+
+    let mut result: Vec<String> = Vec::new();
+    let stems = stemmer::generate_stems(&term, max_group);
+    for stem in stems {
+        match map.get(&stem) {
+            Some(fst_value_index) => {
+                for orig_file_line in &(index.fst_values)[fst_value_index as usize] {
+                    result.push(format!("{}", orig_file_line));
+                }
+            },
+            None => {}
+        }
+    }
+    return result;
+}
+
 /**
  * Populates an index from a file with format:
  * - ["text", ["a", "bunch", "of", "article", "titles", "containing", "text"]]
@@ -231,3 +252,4 @@ pub fn generate_stemmed_index(file_path: &str, max_group: usize) -> StemmedIndex
     println!("Finished writing fst: {} seconds (cumulative)", fst_start.elapsed().as_secs());
     return result_index;
 }
+

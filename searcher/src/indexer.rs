@@ -3,7 +3,7 @@ extern crate memmap;
 extern crate serde_json;
 extern crate simd_json; 
 
-use std::collections::{BTreeMap, VecDeque, HashSet};
+use std::collections::{BTreeMap, VecDeque, HashMap};
 use std::fs::File;
 use std::io;
 use std::io::BufRead;
@@ -132,13 +132,13 @@ pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex>
 }
 
 
-pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> Vec<String> {
+pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> HashMap<String, String> {
     let mmap = unsafe { Mmap::map(&File::open(&(index.fst_file)).unwrap()).unwrap() };
     let map = Map::new(mmap).unwrap();
 
     let association_file_map = unsafe { Mmap::map(&File::open(&(index.association_file)).unwrap()).unwrap() };
 
-    let mut article_set: HashSet<String> = HashSet::new();
+    let mut result_map: HashMap<String, String> = HashMap::new();
 
     let mut result: Vec<String> = Vec::new();
     let stems = stemmer::generate_stems(&term, max_group);
@@ -157,14 +157,14 @@ pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> Vec<S
                     let title = pair[0].as_str().unwrap(); // unused but might be good for filtering
                     let article_array = pair[1].as_array().unwrap();
                     for article in article_array {
-                        article_set.insert(article.to_string());
+                        result_map.insert(article.to_string(), title.to_string());
                     }
                 }
             },
             None => {}
         }
     }
-    return article_set.iter().cloned().collect();
+    return result_map;
 }
 
 /**

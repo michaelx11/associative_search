@@ -64,7 +64,8 @@ pub fn generate_fst_index(file_path: &str, max_group: usize, include_whole: bool
     let mut stem_map: BTreeMap<String, Vec<u64>> = BTreeMap::new();
 
     let fst_file = format!("{}_{}.{}", "fst", file_path, "fst");
-    let mut index_exists = Path::new(&fst_file).exists();
+//    let mut index_exists = Path::new(&fst_file).exists();
+    let mut index_exists = false;
     let mut wtr: Option<io::BufWriter<File>> = None;
     let mut build: Option<MapBuilder<io::BufWriter<File>>> = None;
     if !index_exists {

@@ -5,7 +5,7 @@ use regex::Regex;
 /**
  * Given a search string, generate 
  */
-pub fn generate_stems(term: &str, k: usize) -> Vec<String> {
+pub fn generate_stems(term: &str, k: usize, include_whole: bool) -> Vec<String> {
     lazy_static! {
         static ref nonalpha_re: Regex = Regex::new(r"[^\w\s]").unwrap(); 
     }
@@ -28,6 +28,9 @@ pub fn generate_stems(term: &str, k: usize) -> Vec<String> {
         for u in 0..words.len()-(i-1) {
             stems.push(words[u..u+i].join(" "));
         }
+    }
+    if include_whole {
+        stems.push(words.join(" "));
     }
     return stems;
 }

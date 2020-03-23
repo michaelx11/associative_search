@@ -21,7 +21,9 @@ enum QueryStage {
 
 struct Query {
     query_terms: Vec<String>,
-    stages: Vec<QueryStage>
+    stages: Vec<QueryStage>,
+    max_size: usize,
+    association_dicts: Vec<HashMap<String, HashMap<String, String>>>
 }
 
 // The output is wrapped in a Result to allow matching on errors
@@ -35,8 +37,8 @@ fn find_associations(search_set: &[String], norm_index: &indexer::FstIndex, tabl
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     for term in search_set {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-        let norm_results = indexer::search_fst_index(&term, &norm_index, 1);
-        let table_results = indexer::search_fst_index(&term, &table_index, 1);
+        let norm_results = indexer::search_fst_index(&term, &norm_index, 1, false);
+        let table_results = indexer::search_fst_index(&term, &table_index, 1, false);
         for (article, title) in norm_results {
             entry.insert(article.to_string(), title.to_string());
         }
@@ -47,40 +49,53 @@ fn find_associations(search_set: &[String], norm_index: &indexer::FstIndex, tabl
     return association_dict;
 }
 
-fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>, preloaded_lines: &[Vec<String>]) -> HashMap<String, HashMap<String, String>> {
+fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>, norm_index: &indexer::FstIndex) -> HashMap<String, HashMap<String, String>> {
     // map[item]-> map[article]->title
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
-    for article_vec in preloaded_lines {
-        let title = article_vec[0].to_string();
-        // Iterate through items in search set
-        for (term, subassociations) in associations.iter() {
-            for (_, match_title) in subassociations.iter() {
-                let title_match_key = match_title.to_string();
-                // SELECTION CRITERIA - does title match item?
-                if title.contains(&title_match_key) {
-                    let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-                    // If so, go ahead and add articles->title
-                    for article in article_vec[1..article_vec.len()].iter() {
-                        let article_string = article.as_str();
-                        entry.insert(article_string.to_string(), title.to_string());
-                    }
-                }
+    // Iterate through items in search set
+    for (term, subassociations) in associations.iter() {
+        let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
+        for (_, match_title) in subassociations.iter() {
+
+            let title_match_key = match_title.to_string();
+            let norm_results = indexer::search_fst_index(match_title, &norm_index, 0, true);
+            for (article, title) in norm_results {
+                entry.insert(article.to_string(), title.to_string());
             }
         }
     }
     return association_dict;
 }
 
-fn process_query(query: &Query, norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex) -> String {
-    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex) -> String {
     for stage in query.stages.iter() {
+        let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+        if query.association_dicts.len() > 0 {
+            if query.association_dicts.last().unwrap().len() > query.max_size {
+                eprintln!("Aborting search as maximum size {} for any association stage was exceeded.", query.max_size);
+                break;
+            }
+        }
         match stage {
             QueryStage::WikiAll => {
-                association_dict.extend(find_associations(&query.query_terms[..], norm_index, table_index));
+                eprintln!("WikiAll Stage");
+                if query.association_dicts.len() == 0 {
+                    association_dict.extend(find_associations(&query.query_terms[..], norm_index, table_index));
+                    query.association_dicts.push(association_dict);
+                } else {
+                    eprintln!("Cannot do subfind on all wiki indexes, use WikiArticleRefs insead");
+                }
             },
             QueryStage::WikiArticleRefs => {
-                // TODO: fix this hack
-                association_dict.extend(find_associations(&query.query_terms[..], norm_index, norm_index));
+                // TODO: fix this double index hack
+                if query.association_dicts.len() == 0 {
+                    association_dict.extend(find_associations(&query.query_terms[..], norm_index, norm_index));
+                    query.association_dicts.push(association_dict);
+                } else {
+                    eprintln!("WikiArticleRefs subfind stage");
+                    association_dict.extend(subfind_associations(&query.association_dicts.last().unwrap(), norm_index));
+                    query.association_dicts.push(association_dict);
+                }
             },
             QueryStage::Synonym => {
                 // TODO: implement
@@ -89,11 +104,16 @@ fn process_query(query: &Query, norm_index: &indexer::FstIndex, table_index: &in
     }
     // Finally, we check if we got any good associations
     let mut association_count_dict: HashMap<String, usize> = HashMap::new();
+    let last_association_dict = query.association_dicts.last().unwrap();
     for item in query.query_terms.iter() {
-        let item_key = item.to_string();
-        for (key, value) in association_dict.entry(item_key).or_insert_with(HashMap::new) {
-            let key_string = key.to_string();
-            association_count_dict.entry(key_string).and_modify(|e| {*e += 1}).or_insert(1);
+        match last_association_dict.get(item) {
+            Some(entry) => {
+                for (key, value) in entry {
+                    let key_string = key.to_string();
+                    association_count_dict.entry(key_string).and_modify(|e| {*e += 1}).or_insert(1);
+                }
+            }
+            None => {}
         }
     }
     for (assoc, count) in association_count_dict {
@@ -101,7 +121,7 @@ fn process_query(query: &Query, norm_index: &indexer::FstIndex, table_index: &in
             for item in query.query_terms.iter() {
                 let item_string = item.to_string();
                 let assoc_string = assoc.to_string();
-                println!("{}: {}", assoc, association_dict[&item_string].get(&assoc).unwrap_or(&"[NONE]".to_string()));
+                println!("{}: {}", assoc, last_association_dict[&item_string].get(&assoc).unwrap_or(&"[NONE]".to_string()));
             }
         }
     }
@@ -116,7 +136,10 @@ fn parse_interactive_query(query: &str) -> Query {
     }
     let mut stages: Vec<QueryStage> = Vec::new();
     stages.push(QueryStage::WikiAll);
-    return Query{query_terms, stages};
+    stages.push(QueryStage::WikiArticleRefs);
+    let max_size: usize = 1000;
+    let association_dicts: Vec<HashMap<String, HashMap<String, String>>> = Vec::new();
+    return Query{query_terms, stages, max_size, association_dicts};
 }
 
 fn main() {
@@ -134,8 +157,8 @@ fn main() {
     let table_index_filename = "big_table_index.txt";
     let norm_index_filename = "big_norm_index.txt";
     let now = Instant::now();
-    let table_index = indexer::generate_fst_index(table_index_filename, 1).unwrap();
-    let norm_index = indexer::generate_fst_index(norm_index_filename, 1).unwrap();
+    let table_index = indexer::generate_fst_index(table_index_filename, 1, false).unwrap();
+    let norm_index = indexer::generate_fst_index(norm_index_filename, 1, true).unwrap();
     println!("finished indexing in {}s", now.elapsed().as_secs());
     while true {
         let mut line = String::new();
@@ -143,8 +166,8 @@ fn main() {
         let stdin = io::stdin();
         stdin.lock().read_line(&mut line).unwrap();
         println!("Searching: {}", &line);
-        let query = parse_interactive_query(&line);
-        let results = process_query(&query, &norm_index, &table_index);
+        let mut query = parse_interactive_query(&line);
+        let results = process_query(&mut query, &norm_index, &table_index);
         println!("Results: {:?}", results);
     }
 //    // Need a mapping from items to article

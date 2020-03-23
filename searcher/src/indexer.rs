@@ -58,13 +58,19 @@ pub struct StemChunk {
  * - ["text", ["a", "bunch", "of", "article", "titles", "containing", "text"]]
  *
  */
-pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex> {
+pub fn generate_fst_index(file_path: &str, max_group: usize, include_whole: bool) -> Option<FstIndex> {
+    //TODO: if the file already exists, only do the part where we derive byte offsets
     // stem map stores all stems and the indexes of articles they map to
     let mut stem_map: BTreeMap<String, Vec<u64>> = BTreeMap::new();
 
     let fst_file = format!("{}_{}.{}", "fst", file_path, "fst");
-    let mut wtr = io::BufWriter::new(File::create(&fst_file).unwrap());
-    let mut build = MapBuilder::new(wtr).unwrap();
+    let mut index_exists = Path::new(&fst_file).exists();
+    let mut wtr: Option<io::BufWriter<File>> = None;
+    let mut build: Option<MapBuilder<io::BufWriter<File>>> = None;
+    if !index_exists {
+        wtr = Some(io::BufWriter::new(File::create(&fst_file).unwrap()));
+        build = Some(MapBuilder::new(wtr.unwrap()).unwrap());
+    }
 
     let fst_values: Vec<Vec<u64>> = Vec::new();
     let line_starts: Vec<u64> = Vec::new();
@@ -88,18 +94,20 @@ pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex>
 
                 result_index.line_starts.push(byte_counter);
                 byte_counter += (mutable_bytes.len() + 1) as u64; // + 1 for newline
-                let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
-                let pair = v.as_array().unwrap();
-                let title = pair[0].as_str().unwrap();
-                let article_array = pair[1].as_array().unwrap();
-                // Generate stems from title
-                let stems = stemmer::generate_stems(&title, max_group);
-                if stems.len() > 0 {
-                    // For each stem, insert into 
-                    for stem in stems {
-                        let stem_string = stem.to_string();
-                        let entry = stem_map.entry(stem_string).or_insert_with(Vec::new);
-                        entry.push(counter);
+                if (!index_exists) {
+                    let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
+                    let pair = v.as_array().unwrap();
+                    let title = pair[0].as_str().unwrap();
+                    let article_array = pair[1].as_array().unwrap();
+                    // Generate stems from title
+                    let stems = stemmer::generate_stems(&title, max_group, include_whole);
+                    if stems.len() > 0 {
+                        // For each stem, insert into 
+                        for stem in stems {
+                            let stem_string = stem.to_string();
+                            let entry = stem_map.entry(stem_string).or_insert_with(Vec::new);
+                            entry.push(counter);
+                        }
                     }
                 }
                 // Always increment counter otherwise
@@ -117,22 +125,29 @@ pub fn generate_fst_index(file_path: &str, max_group: usize) -> Option<FstIndex>
     result_index.line_starts.push(byte_counter);
     println!("Finished gathering stemmed chunks in: {} seconds", process_start.elapsed().as_secs());
 
-    println!("Building fst");
-    let fst_start = Instant::now();
-    let mut merged_counter = 0;
-    for (stem, orig_line_vec) in stem_map {
-        result_index.fst_values.push(orig_line_vec);
-        build.insert(stem, merged_counter).unwrap();
-        merged_counter += 1;
+    match build {
+        Some(mut build) => {
+            println!("Building fst");
+            let fst_start = Instant::now();
+            let mut merged_counter = 0;
+            for (stem, orig_line_vec) in stem_map {
+                result_index.fst_values.push(orig_line_vec);
+                build.insert(stem, merged_counter).unwrap();
+                merged_counter += 1;
+            }
+            println!("Finished building fst: {} seconds", fst_start.elapsed().as_secs());
+            build.finish().unwrap();
+            println!("Finished writing fst: {} seconds (cumulative)", fst_start.elapsed().as_secs());
+        },
+        None => {
+            eprintln!("Skipping fst write because file exists.");
+        }
     }
-    println!("Finished building fst: {} seconds", fst_start.elapsed().as_secs());
-    build.finish().unwrap();
-    println!("Finished writing fst: {} seconds (cumulative)", fst_start.elapsed().as_secs());
     return Some(result_index);
 }
 
 
-pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> HashMap<String, String> {
+pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize, include_whole: bool) -> HashMap<String, String> {
     let mmap = unsafe { Mmap::map(&File::open(&(index.fst_file)).unwrap()).unwrap() };
     let map = Map::new(mmap).unwrap();
 
@@ -141,7 +156,7 @@ pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize) -> HashM
     let mut result_map: HashMap<String, String> = HashMap::new();
 
     let mut result: Vec<String> = Vec::new();
-    let stems = stemmer::generate_stems(&term, max_group);
+    let stems = stemmer::generate_stems(&term, max_group, include_whole);
     for stem in stems {
         match map.get(&stem) {
             Some(fst_value_index) => {
@@ -195,7 +210,7 @@ pub fn generate_stemmed_index(file_path: &str, max_group: usize) -> StemmedIndex
                 let title = pair[0].as_str().unwrap();
                 let article_array = pair[1].as_array().unwrap();
                 // Generate stems from title
-                let stems = stemmer::generate_stems(&title, max_group);
+                let stems = stemmer::generate_stems(&title, max_group, false);
                 if stems.len() == 0 {
                     continue;
                 }

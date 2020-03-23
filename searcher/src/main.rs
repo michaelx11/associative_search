@@ -67,12 +67,22 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
     return association_dict;
 }
 
+fn sum_subentries(map_of_maps: &HashMap<String, HashMap<String, String>>) -> usize {
+    let mut counter: usize = 0;
+    for (_, submap) in map_of_maps {
+        counter += submap.len();
+    }
+    return counter;
+}
+
 fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex) -> String {
+    let query_start = Instant::now();
     for stage in query.stages.iter() {
         let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
         if query.association_dicts.len() > 0 {
-            if query.association_dicts.last().unwrap().len() > query.max_size {
-                eprintln!("Aborting search as maximum size {} for any association stage was exceeded.", query.max_size);
+            let total_entries = sum_subentries(query.association_dicts.last().unwrap());
+            if  total_entries > query.max_size {
+                eprintln!("Aborting search as {} > maximum size {} for any association stage was exceeded.", total_entries, query.max_size);
                 break;
             }
         }
@@ -92,8 +102,9 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
                     association_dict.extend(find_associations(&query.query_terms[..], norm_index, norm_index));
                     query.association_dicts.push(association_dict);
                 } else {
-                    eprintln!("WikiArticleRefs subfind stage");
-                    association_dict.extend(subfind_associations(&query.association_dicts.last().unwrap(), norm_index));
+                    let latest_associations = &query.association_dicts.last().unwrap();
+                    eprintln!("WikiArticleRefs subfind stage with {} associations", sum_subentries(latest_associations));
+                    association_dict.extend(subfind_associations(latest_associations, norm_index));
                     query.association_dicts.push(association_dict);
                 }
             },
@@ -101,6 +112,7 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
                 // TODO: implement
             },
         }
+        eprintln!("stage finished: {}s", query_start.elapsed().as_secs());
     }
     // Finally, we check if we got any good associations
     let mut association_count_dict: HashMap<String, usize> = HashMap::new();
@@ -137,7 +149,7 @@ fn parse_interactive_query(query: &str) -> Query {
     let mut stages: Vec<QueryStage> = Vec::new();
     stages.push(QueryStage::WikiAll);
     stages.push(QueryStage::WikiArticleRefs);
-    let max_size: usize = 1000;
+    let max_size: usize = 100000;
     let association_dicts: Vec<HashMap<String, HashMap<String, String>>> = Vec::new();
     return Query{query_terms, stages, max_size, association_dicts};
 }
@@ -170,50 +182,4 @@ fn main() {
         let results = process_query(&mut query, &norm_index, &table_index);
         println!("Results: {:?}", results);
     }
-//    // Need a mapping from items to article
-//    if let Ok(lines) = read_lines(filename) {
-//        for line in lines {
-//            if let Ok(entry) = line {
-//                let mut mutable_bytes = entry.into_bytes();
-//                let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
-//                let pair = v.as_array().unwrap();
-//                let title = pair[0].as_str().unwrap();
-//                let article_array = pair[1].as_array().unwrap();
-//                let mut article_vec = vec![title.to_string()];
-//                for article in article_array.iter() {
-//                    let article_string = article.as_str().unwrap();
-//                    article_vec.push(article_string.to_string());
-//                }
-//                preloaded_lines.push(article_vec);
-//            }
-//        }
-//    }
-//    println!("finished preloading in {}s", now.elapsed().as_secs());
-//    let search_now = Instant::now();
-//    let mut first_level = find_associations(&search_set, &preloaded_lines);
-//    println!("finished first level in {}s", search_now.elapsed().as_secs());
-//    for (term, map) in &first_level {
-//        println!("Term: {}, {:?}", term, map);
-//    }
-//    let second_stage = Instant::now();
-//    let mut association_dict = subfind_associations(&first_level, &preloaded_lines);
-//    println!("finished second level in {}s", second_stage.elapsed().as_secs());
-//    // Finally, we check if we got any good associations
-//    let mut association_count_dict: HashMap<String, usize> = HashMap::new();
-//    for item in search_set.iter() {
-//        let item_key = item.to_string();
-//        for (key, value) in association_dict.entry(item_key).or_insert_with(HashMap::new) {
-//            let key_string = key.to_string();
-//            association_count_dict.entry(key_string).and_modify(|e| {*e += 1}).or_insert(1);
-//        }
-//    }
-//    for (assoc, count) in association_count_dict {
-//        if count >= threshold {
-//            for item in search_set.iter() {
-//                let item_string = item.to_string();
-//                let assoc_string = assoc.to_string();
-//                println!("{}: {}", assoc, association_dict[&item_string].get(&assoc).unwrap_or(&"[NONE]".to_string()));
-//            }
-//        }
-//    }
 }

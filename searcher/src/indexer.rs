@@ -11,7 +11,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use memmap::Mmap;
 
-use fst::{IntoStreamer, Streamer, Map, MapBuilder};
+use fst::{IntoStreamer, Streamer, Map, MapBuilder, Automaton};
+use fst::automaton::{Union, Str};
 
 use serde_json::Value;
 
@@ -36,6 +37,10 @@ pub struct FstIndex {
     fst_file: String,
     // max grouping threshold
     max_group: usize
+}
+
+pub struct InMemoryIndex {
+    pub index: HashMap<String, Vec<String>>
 }
 
 pub struct StemmedIndex {
@@ -131,9 +136,9 @@ pub fn generate_fst_index(file_path: &str, max_group: usize, include_whole: bool
             println!("Building fst");
             let fst_start = Instant::now();
             let mut merged_counter = 0;
-            for (stem, orig_line_vec) in stem_map {
-                result_index.fst_values.push(orig_line_vec);
-                build.insert(stem, merged_counter).unwrap();
+            for (stem, orig_line_vec) in &stem_map {
+                result_index.fst_values.push(orig_line_vec.to_vec());
+                build.insert(stem.to_string(), merged_counter).unwrap();
                 merged_counter += 1;
             }
             println!("Finished building fst: {} seconds", fst_start.elapsed().as_secs());
@@ -144,6 +149,7 @@ pub fn generate_fst_index(file_path: &str, max_group: usize, include_whole: bool
             eprintln!("Skipping fst write because file exists.");
         }
     }
+    stem_map.clear();
     return Some(result_index);
 }
 
@@ -156,7 +162,6 @@ pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize, include_
 
     let mut result_map: HashMap<String, String> = HashMap::new();
 
-    let mut result: Vec<String> = Vec::new();
     let stems = stemmer::generate_stems(&term, max_group, include_whole);
     for stem in stems {
         match map.get(&stem) {
@@ -181,6 +186,96 @@ pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize, include_
         }
     }
     return result_map;
+}
+
+/*
+pub fn search_fst_index_multiple(terms: Vec<&str>, index: &FstIndex, max_group: usize, include_whole: bool) -> HashMap<String, String> {
+    let mmap = unsafe { Mmap::map(&File::open(&(index.fst_file)).unwrap()).unwrap() };
+    let map = Map::new(mmap).unwrap();
+
+    let association_file_map = unsafe { Mmap::map(&File::open(&(index.association_file)).unwrap()).unwrap() };
+
+    let mut automaton: Option<Union<Str, Str>> = None;
+    let mut result_map: HashMap<String, String> = HashMap::new();
+
+    for term in terms {
+        let stems = stemmer::generate_stems(&term, max_group, include_whole);
+        for stem in stems {
+            let mut single_stem_auto = Str::new(&stem);
+            match automaton {
+                Some(autom) => {
+                    autom = autom.union(single_stem_auto);
+                },
+                None => {
+                    automaton = Some(single_stem_auto.union(single_stem_auto));
+                }
+            }
+        }
+    }
+    match map.get(&stem) {
+        Some(fst_value_index) => {
+            for orig_file_line in &(index.fst_values)[fst_value_index as usize] {
+                let line_num: usize = *orig_file_line as usize;
+                // Get byte offset from line_offsets
+                let start_offset = (index.line_starts)[line_num] as usize;
+                let end_offset = (index.line_starts)[line_num + 1] as usize;
+
+                let mut byte_vec: Vec<u8> = association_file_map[start_offset..end_offset].iter().cloned().collect();
+                let v: Value = simd_json::serde::from_slice(&mut byte_vec[..]).unwrap();
+                let pair = v.as_array().unwrap();
+                let title = pair[0].as_str().unwrap(); // unused but might be good for filtering
+                let article_array = pair[1].as_array().unwrap();
+                for article in article_array {
+                    result_map.insert(article.to_string(), title.to_string());
+                }
+            }
+        },
+        None => {}
+    }
+
+    return result_map;
+}
+*/
+
+/**
+ *
+ */
+pub fn generate_inmemory_index(file_path: &str) -> InMemoryIndex {
+
+    let mut index: HashMap<String, Vec<String>> = HashMap::new();
+    let mut inmemory_index = InMemoryIndex{index};
+    let mut counter = 0;
+    let process_start = Instant::now();
+    if let Ok(lines) = read_lines(file_path) {
+        for line in lines {
+            if let Ok(entry) = line {
+                let mut mutable_bytes = entry.into_bytes();
+                let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
+                let pair = v.as_array().unwrap();
+                let title = pair[0].as_str().unwrap();
+                let article_array = pair[1].as_array().unwrap();
+                // Generate stems from title
+                let stems = stemmer::generate_stems(&title, 0, true);
+                if stems.len() == 0 {
+                    continue;
+                }
+                let mut article_vec = vec![title.to_string()];
+                for article in article_array.iter() {
+                    let article_string = article.as_str().unwrap();
+                    article_vec.push(article_string.to_string());
+                }
+                // There should only be one stem
+                let stem_string = stems.first().unwrap().to_string();
+                inmemory_index.index.insert(stem_string, article_vec);
+                counter += 1;
+                if counter % 1000000 == 0 {
+                    println!("counter: {}", counter);
+                }
+            }
+        }
+    }
+    println!("Finished: {} seconds", process_start.elapsed().as_secs());
+    return inmemory_index;
 }
 
 /**

@@ -1,6 +1,7 @@
 extern crate serde_json;
 extern crate simd_json; 
 extern crate searcher;
+extern crate fst;
 
 use std::collections::HashMap;
 use std::env;
@@ -67,6 +68,28 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
     return association_dict;
 }
 
+fn subfind_associations_map(associations: &HashMap<String, HashMap<String, String>>, norm_index: &indexer::InMemoryIndex) -> HashMap<String, HashMap<String, String>> {
+    // map[item]-> map[article]->title
+    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+    // Iterate through items in search set
+    for (term, subassociations) in associations.iter() {
+        let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
+        for (_, match_title) in subassociations.iter() {
+
+            let title_match_key = match_title.to_string();
+            match (norm_index.index.get(match_title)) {
+                Some(norm_results) => {
+                    for (article) in norm_results {
+                        entry.insert(article.to_string(), match_title.to_string());
+                    }
+                },
+                None => {}
+            }
+        }
+    }
+    return association_dict;
+}
+
 fn sum_subentries(map_of_maps: &HashMap<String, HashMap<String, String>>) -> usize {
     let mut counter: usize = 0;
     for (_, submap) in map_of_maps {
@@ -75,7 +98,7 @@ fn sum_subentries(map_of_maps: &HashMap<String, HashMap<String, String>>) -> usi
     return counter;
 }
 
-fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex) -> String {
+fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex, inmem_index: &indexer::InMemoryIndex) -> String {
     let query_start = Instant::now();
     for stage in query.stages.iter() {
         let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
@@ -104,7 +127,7 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
                 } else {
                     let latest_associations = &query.association_dicts.last().unwrap();
                     eprintln!("WikiArticleRefs subfind stage with {} associations", sum_subentries(latest_associations));
-                    association_dict.extend(subfind_associations(latest_associations, norm_index));
+                    association_dict.extend(subfind_associations_map(latest_associations, inmem_index));
                     query.association_dicts.push(association_dict);
                 }
             },
@@ -171,6 +194,7 @@ fn main() {
     let now = Instant::now();
     let table_index = indexer::generate_fst_index(table_index_filename, 1, false).unwrap();
     let norm_index = indexer::generate_fst_index(norm_index_filename, 1, true).unwrap();
+    let inmemory_index = indexer::generate_inmemory_index(norm_index_filename);
     println!("finished indexing in {}s", now.elapsed().as_secs());
     while true {
         let mut line = String::new();
@@ -179,7 +203,7 @@ fn main() {
         stdin.lock().read_line(&mut line).unwrap();
         println!("Searching: {}", &line);
         let mut query = parse_interactive_query(&line);
-        let results = process_query(&mut query, &norm_index, &table_index);
+        let results = process_query(&mut query, &norm_index, &table_index, &inmemory_index);
         println!("Results: {:?}", results);
     }
 }

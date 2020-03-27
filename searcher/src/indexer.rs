@@ -149,7 +149,6 @@ pub fn generate_fst_index(file_path: &str, max_group: usize, include_whole: bool
             eprintln!("Skipping fst write because file exists.");
         }
     }
-    stem_map.clear();
     return Some(result_index);
 }
 
@@ -297,37 +296,37 @@ pub fn generate_stemmed_index(file_path: &str, max_group: usize) -> StemmedIndex
     };
     let mut counter: u64 = 0;
     let process_start = Instant::now();
-    if let Ok(lines) = read_lines(file_path) {
-        for line in lines {
-            if let Ok(entry) = line {
-                let mut mutable_bytes = entry.into_bytes();
-                let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
-                let pair = v.as_array().unwrap();
-                let title = pair[0].as_str().unwrap();
-                let article_array = pair[1].as_array().unwrap();
-                // Generate stems from title
-                let stems = stemmer::generate_stems(&title, max_group, false);
-                if stems.len() == 0 {
-                    continue;
-                }
-                let mut article_vec = vec![title.to_string()];
-                for article in article_array.iter() {
-                    let article_string = article.as_str().unwrap();
-                    article_vec.push(article_string.to_string());
-                }
-                result_index.orig_vec.push(article_vec);
-                // For each stem, insert into 
-                for stem in stems {
-                    let stem_string = stem.to_string();
-                    chunk_vec.push(StemChunk{
-                        stem: stem_string,
-                        index: counter
-                    });
-                }
-                counter += 1;
-                if counter % 1000000 == 0 {
-                    println!("counter: {}", counter);
-                }
+    let file = File::open(file_path).unwrap();
+    let reader = io::BufReader::new(file);
+    for line in reader.lines() {
+        if let Ok(entry) = line {
+            let mut mutable_bytes = entry.into_bytes();
+            let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
+            let pair = v.as_array().unwrap();
+            let title = pair[0].as_str().unwrap();
+            let article_array = pair[1].as_array().unwrap();
+            // Generate stems from title
+            let stems = stemmer::generate_stems(&title, max_group, false);
+            if stems.len() == 0 {
+                continue;
+            }
+            let mut article_vec = vec![title.to_string()];
+            for article in article_array.iter() {
+                let article_string = article.as_str().unwrap();
+                article_vec.push(article_string.to_string());
+            }
+            result_index.orig_vec.push(article_vec);
+            // For each stem, insert into 
+            for stem in stems {
+                let stem_string = stem.to_string();
+                chunk_vec.push(StemChunk{
+                    stem: stem_string,
+                    index: counter
+                });
+            }
+            counter += 1;
+            if counter % 1000000 == 0 {
+                println!("counter: {}", counter);
             }
         }
     }

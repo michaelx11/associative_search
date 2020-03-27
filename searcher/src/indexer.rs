@@ -6,7 +6,7 @@ extern crate simd_json;
 use std::collections::{BTreeMap, VecDeque, HashMap};
 use std::fs::File;
 use std::io;
-use std::io::BufRead;
+use std::io::{BufRead,Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use memmap::Mmap;
@@ -15,6 +15,7 @@ use fst::{IntoStreamer, Streamer, Map, MapBuilder, Automaton};
 use fst::automaton::{Union, Str};
 
 use serde_json::Value;
+use serde_json::json;
 
 use super::stemmer;
 
@@ -69,13 +70,20 @@ pub fn generate_fst_index(file_path: &str, max_group: usize, include_whole: bool
     let mut stem_map: BTreeMap<String, Vec<u64>> = BTreeMap::new();
 
     let fst_file = format!("{}_{}.{}", "fst", file_path, "fst");
-//    let mut index_exists = Path::new(&fst_file).exists();
-    let mut index_exists = false;
+    let fst_values_file = format!("{}_{}.{}", "accessory", file_path, "map");
+    let mut fst_exists = Path::new(&fst_file).exists();
+    let mut fst_values_exists = Path::new(&fst_values_file).exists();
+    let index_exists = (fst_exists && fst_values_exists);
+
     let mut wtr: Option<io::BufWriter<File>> = None;
     let mut build: Option<MapBuilder<io::BufWriter<File>>> = None;
+    let mut fst_values_writer: Option<io::LineWriter<File>> = None;
     if !index_exists {
         wtr = Some(io::BufWriter::new(File::create(&fst_file).unwrap()));
         build = Some(MapBuilder::new(wtr.unwrap()).unwrap());
+        fst_values_writer = Some(io::LineWriter::new(File::create(&fst_values_file).unwrap()));
+    } else {
+        eprintln!("Index files exist, re-using.");
     }
 
     let fst_values: Vec<Vec<u64>> = Vec::new();
@@ -131,22 +139,44 @@ pub fn generate_fst_index(file_path: &str, max_group: usize, include_whole: bool
     result_index.line_starts.push(byte_counter);
     println!("Finished gathering stemmed chunks in: {} seconds", process_start.elapsed().as_secs());
 
-    match build {
-        Some(mut build) => {
-            println!("Building fst");
-            let fst_start = Instant::now();
-            let mut merged_counter = 0;
-            for (stem, orig_line_vec) in &stem_map {
-                result_index.fst_values.push(orig_line_vec.to_vec());
-                build.insert(stem.to_string(), merged_counter).unwrap();
-                merged_counter += 1;
+    if (!index_exists) {
+        let mut fst_write_ref = &mut fst_values_writer.unwrap();
+        match build {
+            Some(mut build) => {
+                println!("Building fst");
+                let fst_start = Instant::now();
+                let mut merged_counter = 0;
+                for (stem, orig_line_vec) in &stem_map {
+                    result_index.fst_values.push(orig_line_vec.to_vec());
+                    let mut line_vec_string = json!(orig_line_vec.to_vec()).to_string();
+                    line_vec_string += "\n";
+                    fst_write_ref.write_all(line_vec_string.as_bytes());
+                    build.insert(stem.to_string(), merged_counter).unwrap();
+                    merged_counter += 1;
+                }
+                println!("Finished building fst: {} seconds", fst_start.elapsed().as_secs());
+                build.finish().unwrap();
+                fst_write_ref.flush();
+                println!("Finished writing fst: {} seconds (cumulative)", fst_start.elapsed().as_secs());
+            },
+            None => {
+                eprintln!("Skipping fst write because file exists.");
             }
-            println!("Finished building fst: {} seconds", fst_start.elapsed().as_secs());
-            build.finish().unwrap();
-            println!("Finished writing fst: {} seconds (cumulative)", fst_start.elapsed().as_secs());
-        },
-        None => {
-            eprintln!("Skipping fst write because file exists.");
+        }
+    } else {
+        // Load FST values from JSON
+        if let Ok(lines) = read_lines(fst_values_file) {
+            for line in lines {
+                if let Ok(entry) = line {
+                    let mut mutable_bytes = entry.into_bytes();
+                    let v: Value = simd_json::serde::from_slice(&mut mutable_bytes).unwrap();
+                    let mut line_vec: Vec<u64> = Vec::new();
+                    for item in v.as_array().unwrap() {
+                        line_vec.push(item.as_u64().unwrap());
+                    }
+                    result_index.fst_values.push(line_vec);
+                }
+            }
         }
     }
     return Some(result_index);

@@ -108,4 +108,35 @@ list of word association puzzles in mysteryhunt history: https://devjoe.appspot.
 
 carmen san diego (phonetic, partial match, synonym) - http://web.mit.edu/puzzle/www/1999/puzzles/4Detective/Warrants4/w4.4/w4.4.html
 
+All words are part of phrases that contain one of TOP,LEFT: http://web.mit.edu/puzzle/www/00/set2/7/Puzzle.html - looks like we actually want the nutrimatic index (or some kind of "phrase" database - exactly the nutrimatic index)
+
+Excellent example of pure association: http://web.mit.edu/puzzle/www/2012/puzzles/phantom_of_the_operator/set_theory/ - lots of queries though so needs to be quick with initial results at least
+- consider adding associative relationships if those are pre-known? the goal being to basically solve set_theory automatically
+
 %u0e42%u0e23%u0e07%u0e40%u0e23%u0e35%u0e22%u0e19%u0e1a%u0e49%u0e32%u0e19%u0e1e%u0e23%u0e49%u0e32%u0e27 %u0e15%u0e33%u0e1a%u0e25%u0e22%u0e21 %u0e2d%u0e33%u0e40%u0e20%u0e2d%u0e17%u0e48%u0e32%u0e27%u0e31%u0e07%u0e1c%u0e32 %u0e08%u0e31%u0e07%u0e2b%u0e27%u0e31%u0e14%u0e19%u0e48%u0e32%u0e19
+
+More notes:
+
+We're extracting (or attempting to with regex) all of the ordered/unordered list items and table entries for each article. This produces a much noisier data set.
+Any depth-based search should use clean data as soon as possible to limit the branch factor.
+
+(random aside) For synonym lookup: Wordnet: https://wordnet.princeton.edu/download/current-version
+
+Wikipedia has lists with sublist breakdowns: (u'list of films: d', [u'drugstore girl', u'domestic disturbance']) -> these would be captured by depth >1 searches but it's a bit annoying. Can we do anything?
+
+Algorithm:
+
+Given a set of words:
+- Choose initial transformations
+- Choose initial acceptance criteria (default: contains word, alternatives could be hamming distance, anagram, phonetic distance, etc)
+- Choose depth and recursive criteria
+- Choose exit criteria (association found for all elements, for half the elements, etc)
+
+Code:
+1. Perform initial transformation on [original_set] to derive { original_word: [working_set] }
+2. For each working set, do a scan through initial data sets 
+3. Do a scan through wikipedia article reference association
+4. Do iteratively until desired depth is reached OR exit criteria reached OR processing limit reached
+
+Pre-processing:
+- takes wikimedia raw dump as only argument, generates finished merged index with 2G memory and only takes up ~100G disk space total (wikipedia uncompressed is like ~70G)

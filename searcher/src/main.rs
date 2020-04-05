@@ -160,18 +160,25 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
             }
         }
     }
+
+    // TODO: score and order
     return "".to_string();
 }
 
-fn parse_interactive_query(query: &str) -> Query {
+fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str) -> Query {
     // Get query set, split by ","
     let mut query_terms: Vec<String> = Vec::new();
-    for term in query.split(",") {
+    for term in query_terms_str.split(",") {
         query_terms.push(term.to_string());
     }
     let mut stages: Vec<QueryStage> = Vec::new();
-    stages.push(QueryStage::WikiAll);
-    stages.push(QueryStage::WikiArticleRefs);
+    for term in query_stages_str.split(",") {
+        match term {
+            "WikiAll" => stages.push(QueryStage::WikiAll),
+            "WikiArticleRefs" => stages.push(QueryStage::WikiArticleRefs),
+            _ => {}
+        }
+    }
     let max_size: usize = 100000;
     let association_dicts: Vec<HashMap<String, HashMap<String, String>>> = Vec::new();
     return Query{query_terms, stages, max_size, association_dicts};
@@ -197,12 +204,17 @@ fn main() {
     let inmemory_index = indexer::generate_inmemory_index(norm_index_filename);
     println!("finished indexing in {}s", now.elapsed().as_secs());
     while true {
-        let mut line = String::new();
-        println!("Type search term, then enter>");
+        let mut search_terms_line = String::new();
+        let mut query_stages_line = String::new();
+        println!("Type comma-separated search terms, then enter>");
         let stdin = io::stdin();
-        stdin.lock().read_line(&mut line).unwrap();
-        println!("Searching: {}", &line);
-        let mut query = parse_interactive_query(&line);
+        stdin.lock().read_line(&mut search_terms_line).unwrap();
+        println!("Type comma-separate search stages [WikiAll, WikiArticleRefs, Synonym]>");
+        stdin.lock().read_line(&mut query_stages_line).unwrap();
+        search_terms_line = search_terms_line.trim().to_string();
+        query_stages_line = query_stages_line.trim().to_string();
+        println!("Searching [{}] in stages [{}]", &search_terms_line, &query_stages_line);
+        let mut query = parse_interactive_query(&search_terms_line, &query_stages_line);
         let results = process_query(&mut query, &norm_index, &table_index, &inmemory_index);
         println!("Results: {:?}", results);
     }

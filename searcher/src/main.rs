@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use searcher::indexer;
+use searcher::synonym_index;
 
 enum QueryStage {
     WikiAll,
@@ -34,6 +35,7 @@ where P: AsRef<Path>, {
     let file = File::open(filename)?;
     Ok(io::BufReader::new(file).lines())
 }
+
 fn find_associations(search_set: &[String], norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex) -> HashMap<String, HashMap<String, String>> {
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     for term in search_set {
@@ -44,6 +46,18 @@ fn find_associations(search_set: &[String], norm_index: &indexer::FstIndex, tabl
             entry.insert(article.to_string(), title.to_string());
         }
         for (article, title) in table_results {
+            entry.insert(article.to_string(), title.to_string());
+        }
+    }
+    return association_dict;
+}
+
+fn find_synonym_associations(search_set: &[String], index: &synonym_index::SynonymIndex) -> HashMap<String, HashMap<String, String>> {
+    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+    for term in search_set {
+        let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
+        let synonym_results = synonym_index::search_synonym_index(&term, index);
+        for (article, title) in synonym_results {
             entry.insert(article.to_string(), title.to_string());
         }
     }
@@ -98,7 +112,7 @@ fn sum_subentries(map_of_maps: &HashMap<String, HashMap<String, String>>) -> usi
     return counter;
 }
 
-fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex, inmem_index: &indexer::InMemoryIndex) -> String {
+fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex, inmem_index: &indexer::InMemoryIndex, syn_index: &synonym_index::SynonymIndex) -> String {
     let query_start = Instant::now();
     for stage in query.stages.iter() {
         let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
@@ -132,7 +146,12 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
                 }
             },
             QueryStage::Synonym => {
-                // TODO: implement
+                if query.association_dicts.len() == 0 {
+                    association_dict.extend(find_synonym_associations(&query.query_terms[..], syn_index));
+                    query.association_dicts.push(association_dict);
+                } else {
+                    eprintln!("Cannot do subfind stage with synonyms, use WikiArticleRefs insead");
+                }
             },
         }
         eprintln!("stage finished: {}s", query_start.elapsed().as_secs());
@@ -176,6 +195,7 @@ fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str) -> Que
         match term {
             "WikiAll" => stages.push(QueryStage::WikiAll),
             "WikiArticleRefs" => stages.push(QueryStage::WikiArticleRefs),
+            "Synonym" => stages.push(QueryStage::Synonym),
             _ => {}
         }
     }
@@ -198,7 +218,9 @@ fn main() {
     eprintln!("filename: {:?}, threshold: {:?}, search set: {:?}", filename, threshold, search_set);
     let table_index_filename = "big_table_index.txt";
     let norm_index_filename = "big_norm_index.txt";
+    let synonym_index_filename = "moby_words.txt";
     let now = Instant::now();
+    let syn_index = synonym_index::generate_synonym_index(synonym_index_filename);
     let table_index = indexer::generate_fst_index(table_index_filename, 1, false).unwrap();
     let norm_index = indexer::generate_fst_index(norm_index_filename, 1, true).unwrap();
     let inmemory_index = indexer::generate_inmemory_index(norm_index_filename);
@@ -215,7 +237,7 @@ fn main() {
         query_stages_line = query_stages_line.trim().to_string();
         println!("Searching [{}] in stages [{}]", &search_terms_line, &query_stages_line);
         let mut query = parse_interactive_query(&search_terms_line, &query_stages_line);
-        let results = process_query(&mut query, &norm_index, &table_index, &inmemory_index);
+        let results = process_query(&mut query, &norm_index, &table_index, &inmemory_index, &syn_index);
         println!("Results: {:?}", results);
     }
 }

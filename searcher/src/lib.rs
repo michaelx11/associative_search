@@ -3,6 +3,7 @@ extern crate lazy_static;
 
 pub mod stemmer;
 pub mod indexer;
+pub mod synonym_index;
 
 #[cfg(test)]
 mod tests {

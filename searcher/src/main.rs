@@ -16,8 +16,9 @@ use searcher::indexer;
 use searcher::synonym_index;
 
 enum QueryStage {
-    WikiAll,
-    WikiArticleRefs,
+    WikiAllStem,
+    WikiArticleStem,
+    WikiArticleExact,
     Synonym
 }
 
@@ -57,8 +58,8 @@ fn find_synonym_associations(search_set: &[String], index: &synonym_index::Synon
     for term in search_set {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
         let synonym_results = synonym_index::search_synonym_index(&term, index);
-        for (article, title) in synonym_results {
-            entry.insert(article.to_string(), title.to_string());
+        for (syn, _) in synonym_results {
+            entry.insert(syn.to_string(), syn.to_string());
         }
     }
     return association_dict;
@@ -74,6 +75,8 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
 
             let title_match_key = match_title.to_string();
             let norm_results = indexer::search_fst_index(match_title, &norm_index, 0, true);
+//            println!("{} - {:?}", match_title, norm_results);
+            println!("search term: {}, num results: {}", match_title, norm_results.len());
             for (article, title) in norm_results {
                 entry.insert(article.to_string(), title.to_string());
             }
@@ -124,7 +127,7 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
             }
         }
         match stage {
-            QueryStage::WikiAll => {
+            QueryStage::WikiAllStem => {
                 eprintln!("WikiAll Stage");
                 if query.association_dicts.len() == 0 {
                     association_dict.extend(find_associations(&query.query_terms[..], norm_index, table_index));
@@ -133,24 +136,30 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
                     eprintln!("Cannot do subfind on all wiki indexes, use WikiArticleRefs insead");
                 }
             },
-            QueryStage::WikiArticleRefs => {
-                // TODO: fix this double index hack
+            QueryStage::WikiArticleStem => {
                 if query.association_dicts.len() == 0 {
+                    // TODO: fix this double index hack
                     association_dict.extend(find_associations(&query.query_terms[..], norm_index, norm_index));
                     query.association_dicts.push(association_dict);
                 } else {
                     let latest_associations = &query.association_dicts.last().unwrap();
-                    eprintln!("WikiArticleRefs subfind stage with {} associations", sum_subentries(latest_associations));
-                    association_dict.extend(subfind_associations_map(latest_associations, inmem_index));
+                    eprintln!("WikiArticleStem subfind stage with {} associations", sum_subentries(latest_associations));
+                    association_dict.extend(subfind_associations(latest_associations, norm_index));
                     query.association_dicts.push(association_dict);
                 }
+            },
+            QueryStage::WikiArticleExact => {
+                let latest_associations = &query.association_dicts.last().unwrap();
+                eprintln!("WikiArticleExact subfind stage with {} associations", sum_subentries(latest_associations));
+                association_dict.extend(subfind_associations_map(latest_associations, inmem_index));
+                query.association_dicts.push(association_dict);
             },
             QueryStage::Synonym => {
                 if query.association_dicts.len() == 0 {
                     association_dict.extend(find_synonym_associations(&query.query_terms[..], syn_index));
                     query.association_dicts.push(association_dict);
                 } else {
-                    eprintln!("Cannot do subfind stage with synonyms, use WikiArticleRefs insead");
+                    eprintln!("Cannot do subfind on all wiki indexes, use WikiArticleRefs insead");
                 }
             },
         }
@@ -193,8 +202,9 @@ fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str) -> Que
     let mut stages: Vec<QueryStage> = Vec::new();
     for term in query_stages_str.split(",") {
         match term {
-            "WikiAll" => stages.push(QueryStage::WikiAll),
-            "WikiArticleRefs" => stages.push(QueryStage::WikiArticleRefs),
+            "WikiAllStem" => stages.push(QueryStage::WikiAllStem),
+            "WikiArticleStem" => stages.push(QueryStage::WikiArticleStem),
+            "WikiArticleExact" => stages.push(QueryStage::WikiArticleExact),
             "Synonym" => stages.push(QueryStage::Synonym),
             _ => {}
         }
@@ -221,6 +231,7 @@ fn main() {
     let synonym_index_filename = "moby_words.txt";
     let now = Instant::now();
     let syn_index = synonym_index::generate_synonym_index(synonym_index_filename);
+    eprintln!("results: {:?}", synonym_index::search_synonym_index("pronouncement", &syn_index));
     let table_index = indexer::generate_fst_index(table_index_filename, 1, false).unwrap();
     let norm_index = indexer::generate_fst_index(norm_index_filename, 1, true).unwrap();
     let inmemory_index = indexer::generate_inmemory_index(norm_index_filename);
@@ -231,7 +242,7 @@ fn main() {
         println!("Type comma-separated search terms, then enter>");
         let stdin = io::stdin();
         stdin.lock().read_line(&mut search_terms_line).unwrap();
-        println!("Type comma-separate search stages [WikiAll, WikiArticleRefs, Synonym]>");
+        println!("Type comma-separate search stages [WikiAllStem or Synonym (both as first only), WikiArticleStem, WikiArticleExact]>");
         stdin.lock().read_line(&mut query_stages_line).unwrap();
         search_terms_line = search_terms_line.trim().to_string();
         query_stages_line = query_stages_line.trim().to_string();

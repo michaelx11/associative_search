@@ -51,8 +51,9 @@ pub fn generate_synonym_index(file_path: &str) -> SynonymIndex {
                 for word in entry.split(",") {
                     all_words.push(word.to_ascii_lowercase());
                 }
-                for word in &all_words {
-                    let index_entry = synonym_index.index.entry(word.to_string()).or_insert_with(Vec::new);
+                let root_word = all_words.first().unwrap();
+                for word in &all_words[1..] {
+                    let index_entry = synonym_index.index.entry(root_word.to_string()).or_insert_with(Vec::new);
                     index_entry.push(counter);
                 }
                 synonym_index.line_vecs.push(all_words);

@@ -75,7 +75,6 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
 
             let title_match_key = match_title.to_string();
             let norm_results = indexer::search_fst_index(match_title, &norm_index, 0, true);
-//            println!("{} - {:?}", match_title, norm_results);
             println!("search term: {}, num results: {}", match_title, norm_results.len());
             for (article, title) in norm_results {
                 entry.insert(article.to_string(), title.to_string());
@@ -181,11 +180,16 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
     }
     for (assoc, count) in association_count_dict {
         if count >= query.query_terms.len() {
+            let mut display_map: HashMap<String, String> = HashMap::new();
             for item in query.query_terms.iter() {
                 let item_string = item.to_string();
-                let assoc_string = assoc.to_string();
-                println!("{}: {}", assoc, last_association_dict[&item_string].get(&assoc).unwrap_or(&"[NONE]".to_string()));
+                let last_match: String = match last_association_dict[item].get(&assoc) {
+                    Some(v) => v.to_string(),
+                    _ => "[NONE]".to_string()
+                };
+                display_map.insert(item_string, last_match.to_string());
             }
+            println!("{}: {:?}", assoc, display_map);
         }
     }
 

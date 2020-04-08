@@ -1,9 +1,9 @@
 extern crate serde_json;
-extern crate simd_json; 
+extern crate simd_json;
 extern crate searcher;
 extern crate fst;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -12,8 +12,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use searcher::indexer;
-use searcher::synonym_index;
+use searcher::{indexer, stemmer, synonym_index};
 
 enum QueryStage {
     WikiAllStem,
@@ -26,7 +25,15 @@ struct Query {
     query_terms: Vec<String>,
     stages: Vec<QueryStage>,
     max_size: usize,
-    association_dicts: Vec<HashMap<String, HashMap<String, String>>>
+    association_dicts: Vec<HashMap<String, HashMap<String, String>>>,
+    // Purely for scoring, TODO: make this structured in some kind of sane way
+    flavortext: Option<String>
+}
+
+#[derive(PartialEq, PartialOrd)]
+struct ScorePair {
+    score: f64,
+    association: String
 }
 
 // The output is wrapped in a Result to allow matching on errors
@@ -178,26 +185,92 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
             None => {}
         }
     }
-    for (assoc, count) in association_count_dict {
-        if count >= query.query_terms.len() {
-            let mut display_map: HashMap<String, String> = HashMap::new();
-            for item in query.query_terms.iter() {
-                let item_string = item.to_string();
-                let last_match: String = match last_association_dict[item].get(&assoc) {
-                    Some(v) => v.to_string(),
-                    _ => "[NONE]".to_string()
-                };
-                display_map.insert(item_string, last_match.to_string());
+    // Stem the flavortext
+    let mut flavortext_set: HashSet<String> = HashSet::new();
+    let mut use_flavortext_filter = false;
+    match &query.flavortext {
+        Some(flavortext) => {
+            // max stem group 1 (word by word) and do not include the entire text (false)
+            for stem in stemmer::generate_stems(&flavortext, 1, false) {
+                flavortext_set.insert(stem.to_string());
             }
-            println!("{}: {:?}", assoc, display_map);
+            use_flavortext_filter = true;
+        },
+        None => {
+            use_flavortext_filter = false;
+        }
+    }
+    // TODO: add scoring based on flavortext if it exists
+    let mut scored_pairs: Vec<ScorePair> = Vec::new();
+    for (assoc, count) in association_count_dict {
+        // Score each association
+        // Our scoring approach is a bit qualitative:
+        // - Imagine we get 100k 5/5 matches (synonym expansion) with no thematic filter,
+        // then count is completely useless.
+        // - On the other hand, if we get 1 5/5 match and 5 4/5 matches, maybe we don't care
+        // so much about theme. However, we may not need to quantify this because we're always
+        // going to display a limited number of results and we can just display all of them.
+        // - Problem is we'll get millions of 1/5 and 2/5 matches
+        // - So maybe we just sort by count first, threshold, then apply thematic scoring
+        // - That's bad again in the 100k 5/5 match case, it'll fill the threshold immediately
+        // before thematic scoring occurs, but maybe that's okay because theme really doesn't
+        // matter if it's 0/5, 1/5, 2/5 etc. There are just too many of those matches.
+        // - Do both signals independently and use the one that provides more information? (higher
+        // selectivity)
+        // - For now, score is straight up (count) + ((# thematic)/(# words) in association)
+
+        // Debate aside, we can safely ignore 0 or 1 matches
+        if count <= 1 {
+            continue;
+        }
+
+        let mut score: f64 = count as f64;
+        if use_flavortext_filter {
+            let mut assoc_stems: Vec<String> = Vec::new();
+            let mut thematic_stems: f64 = 0.0;
+            for stem in stemmer::generate_stems(&assoc, 1, false) {
+                match flavortext_set.get(&stem) {
+                    Some(_) => {thematic_stems += 1.0},
+                    None => {}
+                }
+                assoc_stems.push(stem);
+            }
+            let total_stems: usize = assoc_stems.len();
+            if total_stems == 0 {
+                score = 0.0;
+            } else {
+                score += thematic_stems / (total_stems as f64);
+            }
+        }
+        scored_pairs.push(ScorePair{score: score, association: assoc.to_string()});
+    }
+    println!("Total scored associations: {}", scored_pairs.len());
+    // Need to sort f64s that don't implement Eq (damn you Rust), we no there are no NaNs
+    scored_pairs.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    let ARBITRARY_THRESHOLD = 100;
+    let mut num_displayed = 0;
+    for score_pair in scored_pairs {
+        let mut display_map: HashMap<String, String> = HashMap::new();
+        for item in query.query_terms.iter() {
+            let item_string = item.to_string();
+            let last_match: String = match last_association_dict[item].get(&score_pair.association) {
+                Some(v) => v.to_string(),
+                _ => "[NONE]".to_string()
+            };
+            display_map.insert(item_string, last_match.to_string());
+        }
+        num_displayed += 1;
+        println!("{}: {}: {:?}", score_pair.score, &score_pair.association, display_map);
+        if num_displayed > ARBITRARY_THRESHOLD {
+            println!("Terminating early at score: {}", score_pair.score);
+            break;
         }
     }
 
-    // TODO: score and order
     return "".to_string();
 }
 
-fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str) -> Query {
+fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str, flavortext_str: &str) -> Query {
     // Get query set, split by ","
     let mut query_terms: Vec<String> = Vec::new();
     for term in query_terms_str.split(",") {
@@ -215,7 +288,11 @@ fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str) -> Que
     }
     let max_size: usize = 100000;
     let association_dicts: Vec<HashMap<String, HashMap<String, String>>> = Vec::new();
-    return Query{query_terms, stages, max_size, association_dicts};
+    let mut flavortext: Option<String> = None;
+    if flavortext_str.len() > 0 {
+        flavortext = Some(flavortext_str.to_string());
+    }
+    return Query{query_terms, stages, max_size, association_dicts, flavortext};
 }
 
 fn main() {
@@ -243,15 +320,19 @@ fn main() {
     while true {
         let mut search_terms_line = String::new();
         let mut query_stages_line = String::new();
+        let mut flavortext = String::new();
         println!("Type comma-separated search terms, then enter>");
         let stdin = io::stdin();
         stdin.lock().read_line(&mut search_terms_line).unwrap();
         println!("Type comma-separate search stages [WikiAllStem or Synonym (both as first only), WikiArticleStem, WikiArticleExact]>");
         stdin.lock().read_line(&mut query_stages_line).unwrap();
+        println!("Type any flavortext to filter by (single line):");
+        stdin.lock().read_line(&mut flavortext).unwrap();
         search_terms_line = search_terms_line.trim().to_string();
         query_stages_line = query_stages_line.trim().to_string();
-        println!("Searching [{}] in stages [{}]", &search_terms_line, &query_stages_line);
-        let mut query = parse_interactive_query(&search_terms_line, &query_stages_line);
+        flavortext = flavortext.trim().to_string();
+        println!("Searching [{}] in stages [{}], with flavortext: [{}]", &search_terms_line, &query_stages_line, &flavortext);
+        let mut query = parse_interactive_query(&search_terms_line, &query_stages_line, &flavortext);
         let results = process_query(&mut query, &norm_index, &table_index, &inmemory_index, &syn_index);
         println!("Results: {:?}", results);
     }

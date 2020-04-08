@@ -12,7 +12,6 @@ pub fn generate_stems(term: &str, k: usize, include_whole: bool) -> Vec<String> 
     // Non-alphanumeric characters are removed
     let alpha_only = nonalpha_re.replace_all(term, "");
     let alpha_only_lower = alpha_only.to_lowercase();
-//    let alpha_only_lower = term.to_lowercase();
     // split by whitespace
     let split = alpha_only_lower.split_whitespace();
     let mut words: Vec<String> = Vec::new();

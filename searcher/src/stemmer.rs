@@ -1,6 +1,8 @@
 
 use regex::Regex;
 
+use std::collections::HashSet;
+
 
 /**
  * Given a search string, generate 
@@ -18,18 +20,18 @@ pub fn generate_stems(term: &str, k: usize, include_whole: bool) -> Vec<String> 
     for chunk in split {
         words.push(chunk.to_string());
     }
-    let mut stems: Vec<String> = Vec::new();
+    let mut stems: HashSet<String> = HashSet::new();
     // Take combinations of chunks up to K
     for i in 1..k+1 {
         if i > words.len() {
             break;
         }
         for u in 0..words.len()-(i-1) {
-            stems.push(words[u..u+i].join(" "));
+            stems.insert(words[u..u+i].join(" "));
         }
     }
     if include_whole {
-        stems.push(words.join(" "));
+        stems.insert(words.join(" "));
     }
-    return stems;
+    return stems.into_iter().collect();
 }

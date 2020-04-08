@@ -224,7 +224,7 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
             continue;
         }
 
-        let mut score: f64 = count as f64;
+        let mut score: f64 = (count as f64) * 100.0;
         if use_flavortext_filter {
             let mut assoc_stems: Vec<String> = Vec::new();
             let mut thematic_stems: f64 = 0.0;
@@ -235,12 +235,13 @@ fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index:
                 }
                 assoc_stems.push(stem);
             }
-            let total_stems: usize = assoc_stems.len();
-            if total_stems == 0 {
-                score = 0.0;
-            } else {
-                score += thematic_stems / (total_stems as f64);
-            }
+            score += thematic_stems;
+//            let total_stems: usize = assoc_stems.len();
+//            if total_stems == 0 {
+//                score = 0.0;
+//            } else {
+//                score += thematic_stems / (total_stems as f64);
+//            }
         }
         scored_pairs.push(ScorePair{score: score, association: assoc.to_string()});
     }

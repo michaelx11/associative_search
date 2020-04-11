@@ -46,7 +46,7 @@ where P: AsRef<Path>, {
     Ok(io::BufReader::new(file).lines())
 }
 
-fn find_associations(search_set: &[String], norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex) -> HashMap<String, HashMap<String, String>> {
+fn find_associations(search_set: &[String], norm_index: &impl Searchable, table_index: &impl Searchable) -> HashMap<String, HashMap<String, String>> {
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     for term in search_set {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
@@ -74,7 +74,7 @@ fn find_synonym_associations(search_set: &[String], index: &synonym_index::Synon
     return association_dict;
 }
 
-fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>, norm_index: &indexer::FstIndex) -> HashMap<String, HashMap<String, String>> {
+fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>, norm_index: &impl Searchable) -> HashMap<String, HashMap<String, String>> {
     // map[item]-> map[article]->title
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     // Iterate through items in search set
@@ -93,7 +93,7 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
     return association_dict;
 }
 
-fn subfind_associations_map(associations: &HashMap<String, HashMap<String, String>>, norm_index: &indexer::InMemoryIndex) -> HashMap<String, HashMap<String, String>> {
+fn subfind_associations_map(associations: &HashMap<String, HashMap<String, String>>, norm_index: &impl Searchable) -> HashMap<String, HashMap<String, String>> {
     // map[item]-> map[article]->title
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     // Iterate through items in search set
@@ -119,7 +119,7 @@ fn sum_subentries(map_of_maps: &HashMap<String, HashMap<String, String>>) -> usi
     return counter;
 }
 
-fn process_query(query: &mut Query, norm_index: &indexer::FstIndex, table_index: &indexer::FstIndex, inmem_index: &indexer::InMemoryIndex, syn_index: &synonym_index::SynonymIndex) -> String {
+fn process_query(query: &mut Query, norm_index: &impl Searchable, table_index: &impl Searchable, inmem_index: &impl Searchable, syn_index: &synonym_index::SynonymIndex) -> String {
     let query_start = Instant::now();
     for stage in query.stages.iter() {
         let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
@@ -314,7 +314,6 @@ fn main() {
     eprintln!("results: {:?}", synonym_index::search_synonym_index("pronouncement", &syn_index));
     let table_index = indexer::generate_fst_index(table_index_filename, 1, false).unwrap();
     let norm_index = indexer::generate_fst_index(norm_index_filename, 1, true).unwrap();
-//    let norm_index = indexer::generate_inmemory_index(norm_index_filename, 1, true);
     let inmemory_index = indexer::generate_inmemory_index(norm_index_filename, 0, true);
     println!("finished indexing in {}s", now.elapsed().as_secs());
     while true {

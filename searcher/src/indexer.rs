@@ -3,7 +3,7 @@ extern crate memmap;
 extern crate serde_json;
 extern crate simd_json; 
 
-use std::collections::{BTreeMap, VecDeque, HashMap};
+use std::collections::{BTreeMap, VecDeque, HashMap, HashSet};
 use std::fs::File;
 use std::io;
 use std::io::{BufRead,Write};
@@ -41,7 +41,8 @@ pub struct FstIndex {
 }
 
 pub struct InMemoryIndex {
-    pub index: HashMap<String, Vec<String>>
+    index: HashMap<String, Vec<usize>>,
+    lines: Vec<Vec<String>>
 }
 
 pub struct StemmedIndex {
@@ -232,8 +233,13 @@ impl Searchable for InMemoryIndex {
         for stem in stems {
             match (self.index.get(&stem)) {
                 Some(results) => {
-                    for (article) in results {
-                        result_map.insert(article.to_string(), stem.to_string());
+                    for line_index in results {
+                        let line_slice: &Vec<String> = &self.lines[*line_index];
+                        // Original item, it's added during index generation
+                        let orig_item = line_slice.first().unwrap();
+                        for i in 1..line_slice.len() {
+                            result_map.insert(line_slice[i].to_string(), orig_item.to_string());
+                        }
                     }
                 },
                 None => {}
@@ -297,8 +303,9 @@ pub fn search_fst_index_multiple(terms: Vec<&str>, index: &FstIndex, max_group: 
  */
 pub fn generate_inmemory_index(file_path: &str, max_group: usize, include_whole: bool) -> InMemoryIndex {
 
-    let mut index: HashMap<String, Vec<String>> = HashMap::new();
-    let mut inmemory_index = InMemoryIndex{index};
+    let mut index: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut lines: Vec<Vec<String>> = Vec::new();
+    let mut inmemory_index = InMemoryIndex{index, lines};
     let mut counter = 0;
     let process_start = Instant::now();
     if let Ok(lines) = read_lines(file_path) {
@@ -319,9 +326,11 @@ pub fn generate_inmemory_index(file_path: &str, max_group: usize, include_whole:
                     let article_string = article.as_str().unwrap();
                     article_vec.push(article_string.to_string());
                 }
-                // There should only be one stem
-                let stem_string = stems.first().unwrap().to_string();
-                inmemory_index.index.insert(stem_string, article_vec);
+                for stem in stems {
+                    let entry = inmemory_index.index.entry(stem.to_string()).or_insert_with(Vec::new);
+                    entry.push(counter);
+                }
+                inmemory_index.lines.push(article_vec);
                 counter += 1;
                 if counter % 1000000 == 0 {
                     println!("counter: {}", counter);

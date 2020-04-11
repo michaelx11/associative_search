@@ -14,6 +14,8 @@ use serde_json::Value;
 
 use searcher::{indexer, stemmer, synonym_index};
 
+use searcher::indexer::Searchable;
+
 enum QueryStage {
     WikiAllStem,
     WikiArticleStem,
@@ -48,8 +50,8 @@ fn find_associations(search_set: &[String], norm_index: &indexer::FstIndex, tabl
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     for term in search_set {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-        let norm_results = indexer::search_fst_index(&term, &norm_index, 1, false);
-        let table_results = indexer::search_fst_index(&term, &table_index, 1, false);
+        let norm_results = norm_index.search(&term, 1, false);
+        let table_results = table_index.search(&term, 1, false);
         for (article, title) in norm_results {
             entry.insert(article.to_string(), title.to_string());
         }
@@ -81,7 +83,7 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
         for (_, match_title) in subassociations.iter() {
 
             let title_match_key = match_title.to_string();
-            let norm_results = indexer::search_fst_index(match_title, &norm_index, 0, true);
+            let norm_results = norm_index.search(match_title, 0, true);
             println!("search term: {}, num results: {}", match_title, norm_results.len());
             for (article, title) in norm_results {
                 entry.insert(article.to_string(), title.to_string());
@@ -316,7 +318,8 @@ fn main() {
     eprintln!("results: {:?}", synonym_index::search_synonym_index("pronouncement", &syn_index));
     let table_index = indexer::generate_fst_index(table_index_filename, 1, false).unwrap();
     let norm_index = indexer::generate_fst_index(norm_index_filename, 1, true).unwrap();
-    let inmemory_index = indexer::generate_inmemory_index(norm_index_filename);
+//    let norm_index = indexer::generate_inmemory_index(norm_index_filename, 1, true);
+    let inmemory_index = indexer::generate_inmemory_index(norm_index_filename, 0, true);
     println!("finished indexing in {}s", now.elapsed().as_secs());
     while true {
         let mut search_terms_line = String::new();

@@ -53,6 +53,11 @@ pub struct StemmedIndex {
     orig_vec: Vec<Vec<String>>
 }
 
+pub trait Searchable {
+    // Search
+    fn search(&self, term: &str, max_group: usize, include_whole: bool) -> HashMap<String, String>;
+}
+
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 pub struct StemChunk {
     stem: String,
@@ -183,38 +188,41 @@ pub fn generate_fst_index(file_path: &str, max_group: usize, include_whole: bool
 }
 
 
-pub fn search_fst_index(term: &str, index: &FstIndex, max_group: usize, include_whole: bool) -> HashMap<String, String> {
-    let mmap = unsafe { Mmap::map(&File::open(&(index.fst_file)).unwrap()).unwrap() };
-    let map = Map::new(mmap).unwrap();
-
-    let association_file_map = unsafe { Mmap::map(&File::open(&(index.association_file)).unwrap()).unwrap() };
-
-    let mut result_map: HashMap<String, String> = HashMap::new();
-
-    let stems = stemmer::generate_stems(&term, max_group, include_whole);
-    for stem in stems {
-        match map.get(&stem) {
-            Some(fst_value_index) => {
-                for orig_file_line in &(index.fst_values)[fst_value_index as usize] {
-                    let line_num: usize = *orig_file_line as usize;
-                    // Get byte offset from line_offsets
-                    let start_offset = (index.line_starts)[line_num] as usize;
-                    let end_offset = (index.line_starts)[line_num + 1] as usize;
-
-                    let mut byte_vec: Vec<u8> = association_file_map[start_offset..end_offset].iter().cloned().collect();
-                    let v: Value = simd_json::serde::from_slice(&mut byte_vec[..]).unwrap();
-                    let pair = v.as_array().unwrap();
-                    let title = pair[0].as_str().unwrap(); // unused but might be good for filtering
-                    let article_array = pair[1].as_array().unwrap();
-                    for article in article_array {
-                        result_map.insert(article.to_string(), title.to_string());
+impl Searchable for FstIndex {
+    fn search(&self, term: &str, max_group: usize, include_whole: bool) -> HashMap<String, String> {
+        let index = &self;
+        let mmap = unsafe { Mmap::map(&File::open(&(index.fst_file)).unwrap()).unwrap() };
+        let map = Map::new(mmap).unwrap();
+    
+        let association_file_map = unsafe { Mmap::map(&File::open(&(index.association_file)).unwrap()).unwrap() };
+    
+        let mut result_map: HashMap<String, String> = HashMap::new();
+    
+        let stems = stemmer::generate_stems(&term, max_group, include_whole);
+        for stem in stems {
+            match map.get(&stem) {
+                Some(fst_value_index) => {
+                    for orig_file_line in &(index.fst_values)[fst_value_index as usize] {
+                        let line_num: usize = *orig_file_line as usize;
+                        // Get byte offset from line_offsets
+                        let start_offset = (index.line_starts)[line_num] as usize;
+                        let end_offset = (index.line_starts)[line_num + 1] as usize;
+    
+                        let mut byte_vec: Vec<u8> = association_file_map[start_offset..end_offset].iter().cloned().collect();
+                        let v: Value = simd_json::serde::from_slice(&mut byte_vec[..]).unwrap();
+                        let pair = v.as_array().unwrap();
+                        let title = pair[0].as_str().unwrap(); // unused but might be good for filtering
+                        let article_array = pair[1].as_array().unwrap();
+                        for article in article_array {
+                            result_map.insert(article.to_string(), title.to_string());
+                        }
                     }
-                }
-            },
-            None => {}
+                },
+                None => {}
+            }
         }
+        return result_map;
     }
-    return result_map;
 }
 
 /*
@@ -269,7 +277,7 @@ pub fn search_fst_index_multiple(terms: Vec<&str>, index: &FstIndex, max_group: 
 /**
  *
  */
-pub fn generate_inmemory_index(file_path: &str) -> InMemoryIndex {
+pub fn generate_inmemory_index(file_path: &str, max_group: usize, include_whole: bool) -> InMemoryIndex {
 
     let mut index: HashMap<String, Vec<String>> = HashMap::new();
     let mut inmemory_index = InMemoryIndex{index};
@@ -284,7 +292,7 @@ pub fn generate_inmemory_index(file_path: &str) -> InMemoryIndex {
                 let title = pair[0].as_str().unwrap();
                 let article_array = pair[1].as_array().unwrap();
                 // Generate stems from title
-                let stems = stemmer::generate_stems(&title, 0, true);
+                let stems = stemmer::generate_stems(&title, max_group, include_whole);
                 if stems.len() == 0 {
                     continue;
                 }

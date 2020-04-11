@@ -313,8 +313,7 @@ fn main() {
     let syn_index = synonym_index::generate_synonym_index(synonym_index_filename);
     eprintln!("results: {:?}", synonym_index::search_synonym_index("pronouncement", &syn_index));
     let table_index = indexer::generate_fst_index(table_index_filename, 1, false).unwrap();
-    let norm_index = indexer::generate_fst_index(norm_index_filename, 1, true).unwrap();
-    let inmemory_index = indexer::generate_inmemory_index(norm_index_filename, 0, true);
+    let norm_index = indexer::generate_inmemory_index(norm_index_filename, 1, true);
     println!("finished indexing in {}s", now.elapsed().as_secs());
     while true {
         let mut search_terms_line = String::new();
@@ -332,7 +331,7 @@ fn main() {
         flavortext = flavortext.trim().to_string();
         println!("Searching [{}] in stages [{}], with flavortext: [{}]", &search_terms_line, &query_stages_line, &flavortext);
         let mut query = parse_interactive_query(&search_terms_line, &query_stages_line, &flavortext);
-        let results = process_query(&mut query, &norm_index, &table_index, &inmemory_index, &syn_index);
+        let results = process_query(&mut query, &norm_index, &table_index, &norm_index, &syn_index);
         println!("Results: {:?}", results);
     }
 }

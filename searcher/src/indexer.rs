@@ -225,6 +225,24 @@ impl Searchable for FstIndex {
     }
 }
 
+impl Searchable for InMemoryIndex {
+    fn search(&self, term: &str, max_group: usize, include_whole: bool) -> HashMap<String, String> {
+        let mut result_map: HashMap<String, String> = HashMap::new();
+        let stems = stemmer::generate_stems(&term, max_group, include_whole);
+        for stem in stems {
+            match (self.index.get(&stem)) {
+                Some(results) => {
+                    for (article) in results {
+                        result_map.insert(article.to_string(), stem.to_string());
+                    }
+                },
+                None => {}
+            }
+        }
+        return result_map;
+    }
+}
+
 /*
 pub fn search_fst_index_multiple(terms: Vec<&str>, index: &FstIndex, max_group: usize, include_whole: bool) -> HashMap<String, String> {
     let mmap = unsafe { Mmap::map(&File::open(&(index.fst_file)).unwrap()).unwrap() };

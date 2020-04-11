@@ -99,16 +99,12 @@ fn subfind_associations_map(associations: &HashMap<String, HashMap<String, Strin
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-        for (_, match_title) in subassociations.iter() {
+        for (_, prev_title) in subassociations.iter() {
 
-            let title_match_key = match_title.to_string();
-            match (norm_index.index.get(match_title)) {
-                Some(norm_results) => {
-                    for (article) in norm_results {
-                        entry.insert(article.to_string(), match_title.to_string());
-                    }
-                },
-                None => {}
+            // search returns <result entry, what matched that entry's key>
+            // since this is subfind we do 0 stemming and include the whole string
+            for (matching_result, prev_title_stem) in norm_index.search(prev_title, 0, true) {
+                entry.insert(matching_result.to_string(), prev_title_stem.to_string());
             }
         }
     }

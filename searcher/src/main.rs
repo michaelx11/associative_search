@@ -3,12 +3,14 @@ extern crate simd_json;
 extern crate searcher;
 extern crate fst;
 
+use std::thread;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -46,7 +48,7 @@ where P: AsRef<Path>, {
     Ok(io::BufReader::new(file).lines())
 }
 
-fn find_associations(search_set: &[String], norm_index: &impl Searchable, table_index: &impl Searchable) -> HashMap<String, HashMap<String, String>> {
+fn find_associations(search_set: &[String], norm_index: &Arc<impl Searchable>, table_index: &Arc<impl Searchable>) -> HashMap<String, HashMap<String, String>> {
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     for term in search_set {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
@@ -62,7 +64,7 @@ fn find_associations(search_set: &[String], norm_index: &impl Searchable, table_
     return association_dict;
 }
 
-fn find_synonym_associations(search_set: &[String], index: &synonym_index::SynonymIndex) -> HashMap<String, HashMap<String, String>> {
+fn find_synonym_associations(search_set: &[String], index: &Arc<synonym_index::SynonymIndex>) -> HashMap<String, HashMap<String, String>> {
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     for term in search_set {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
@@ -74,7 +76,7 @@ fn find_synonym_associations(search_set: &[String], index: &synonym_index::Synon
     return association_dict;
 }
 
-fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>, norm_index: &impl Searchable) -> HashMap<String, HashMap<String, String>> {
+fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>, norm_index: &Arc<impl Searchable>) -> HashMap<String, HashMap<String, String>> {
     // map[item]-> map[article]->title
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     // Iterate through items in search set
@@ -84,7 +86,7 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
 
             let title_match_key = match_title.to_string();
             let norm_results = norm_index.search(match_title, 0, true);
-            println!("search term: {}, num results: {}", match_title, norm_results.len());
+//            println!("search term: {}, num results: {}", match_title, norm_results.len());
             for (article, title) in norm_results {
                 entry.insert(article.to_string(), title.to_string());
             }
@@ -93,7 +95,7 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
     return association_dict;
 }
 
-fn subfind_associations_map(associations: &HashMap<String, HashMap<String, String>>, norm_index: &impl Searchable) -> HashMap<String, HashMap<String, String>> {
+fn subfind_associations_map(associations: &HashMap<String, HashMap<String, String>>, norm_index: &Arc<impl Searchable>) -> HashMap<String, HashMap<String, String>> {
     // map[item]-> map[article]->title
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     // Iterate through items in search set
@@ -119,8 +121,9 @@ fn sum_subentries(map_of_maps: &HashMap<String, HashMap<String, String>>) -> usi
     return counter;
 }
 
-fn process_query(query: &mut Query, norm_index: &impl Searchable, table_index: &impl Searchable, inmem_index: &impl Searchable, syn_index: &synonym_index::SynonymIndex) -> String {
+fn process_query(mut query_raw: Query, norm_index: Arc<impl Searchable>, table_index: Arc<impl Searchable>, syn_index: Arc<synonym_index::SynonymIndex>) -> String {
     let query_start = Instant::now();
+    let mut query = &mut query_raw;
     for stage in query.stages.iter() {
         let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
         if query.association_dicts.len() > 0 {
@@ -134,7 +137,7 @@ fn process_query(query: &mut Query, norm_index: &impl Searchable, table_index: &
             QueryStage::WikiAllStem => {
                 eprintln!("WikiAll Stage");
                 if query.association_dicts.len() == 0 {
-                    association_dict.extend(find_associations(&query.query_terms[..], norm_index, table_index));
+                    association_dict.extend(find_associations(&query.query_terms[..], &norm_index, &table_index));
                     query.association_dicts.push(association_dict);
                 } else {
                     eprintln!("Cannot do subfind on all wiki indexes, use WikiArticleRefs insead");
@@ -143,24 +146,24 @@ fn process_query(query: &mut Query, norm_index: &impl Searchable, table_index: &
             QueryStage::WikiArticleStem => {
                 if query.association_dicts.len() == 0 {
                     // TODO: fix this double index hack
-                    association_dict.extend(find_associations(&query.query_terms[..], norm_index, norm_index));
+                    association_dict.extend(find_associations(&query.query_terms[..], &norm_index, &norm_index));
                     query.association_dicts.push(association_dict);
                 } else {
                     let latest_associations = &query.association_dicts.last().unwrap();
                     eprintln!("WikiArticleStem subfind stage with {} associations", sum_subentries(latest_associations));
-                    association_dict.extend(subfind_associations(latest_associations, norm_index));
+                    association_dict.extend(subfind_associations(latest_associations, &norm_index));
                     query.association_dicts.push(association_dict);
                 }
             },
             QueryStage::WikiArticleExact => {
                 let latest_associations = &query.association_dicts.last().unwrap();
                 eprintln!("WikiArticleExact subfind stage with {} associations", sum_subentries(latest_associations));
-                association_dict.extend(subfind_associations_map(latest_associations, inmem_index));
+                association_dict.extend(subfind_associations_map(latest_associations, &norm_index));
                 query.association_dicts.push(association_dict);
             },
             QueryStage::Synonym => {
                 if query.association_dicts.len() == 0 {
-                    association_dict.extend(find_synonym_associations(&query.query_terms[..], syn_index));
+                    association_dict.extend(find_synonym_associations(&query.query_terms[..], &syn_index));
                     query.association_dicts.push(association_dict);
                 } else {
                     eprintln!("Cannot do subfind on all wiki indexes, use WikiArticleRefs insead");
@@ -310,10 +313,9 @@ fn main() {
     let norm_index_filename = "big_norm_index.txt";
     let synonym_index_filename = "moby_words.txt";
     let now = Instant::now();
-    let syn_index = synonym_index::generate_synonym_index(synonym_index_filename);
-    eprintln!("results: {:?}", synonym_index::search_synonym_index("pronouncement", &syn_index));
-    let table_index = indexer::generate_fst_index(table_index_filename, 1, false).unwrap();
-    let norm_index = indexer::generate_inmemory_index(norm_index_filename, 1, true);
+    let syn_index = Arc::new(synonym_index::generate_synonym_index(synonym_index_filename));
+    let table_index = Arc::new(indexer::generate_fst_index(table_index_filename, 1, false).unwrap());
+    let norm_index = Arc::new(indexer::generate_inmemory_index(norm_index_filename, 1, true));
     println!("finished indexing in {}s", now.elapsed().as_secs());
     while true {
         let mut search_terms_line = String::new();
@@ -331,7 +333,12 @@ fn main() {
         flavortext = flavortext.trim().to_string();
         println!("Searching [{}] in stages [{}], with flavortext: [{}]", &search_terms_line, &query_stages_line, &flavortext);
         let mut query = parse_interactive_query(&search_terms_line, &query_stages_line, &flavortext);
-        let results = process_query(&mut query, &norm_index, &table_index, &norm_index, &syn_index);
-        println!("Results: {:?}", results);
+        let thread_table_index = table_index.clone();
+        let thread_norm_index = norm_index.clone();
+        let thread_syn_index = syn_index.clone();
+        thread::spawn(|| {
+            let results = process_query(query, thread_norm_index, thread_table_index, thread_syn_index);
+            println!("Results: {:?}", results);
+        });
     }
 }

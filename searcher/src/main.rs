@@ -7,10 +7,12 @@ use std::thread;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Read, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
+use std::net::TcpStream;
+use std::net::TcpListener;
 
 use serde_json::Value;
 
@@ -297,12 +299,30 @@ fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str, flavor
     return Query{query_terms, stages, max_size, association_dicts, flavortext};
 }
 
+fn handle_connection(mut stream: TcpStream) {
+    let mut buffer = [0; 512];
+    stream.read(&mut buffer).unwrap();
+
+    let response = "HTTP/1.1 200 OK\r\n\r\n";
+    stream.write(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
+}
+
 fn main() {
     // first arg: filename, remaining args go into search set
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
         eprintln!("Usage: ./searcher [filename] [search set size] [item1] [item2] ...");
         return;
+    }
+    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
+
+    for stream in listener.incoming() {
+        let stream = stream.unwrap();
+        thread::spawn(|| {
+            handle_connection(stream);
+        });
+        println!("Connection established!");
     }
     let filename = &args[1];
     let threshold = args[2].parse::<usize>().unwrap();

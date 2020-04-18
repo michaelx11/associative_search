@@ -300,6 +300,49 @@ fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str, flavor
     return Query{query_terms, stages, max_size, association_dicts, flavortext};
 }
 
+fn parse_http_query(body: &mut [u8]) -> Query {
+    println!("body: {:?}", body);
+    let v: Value = simd_json::serde::from_slice(body).unwrap();
+    println!("{:?}", v);
+    let object = v.as_object().unwrap();
+    // Parse query stages array
+    let query_stages_array = object.get("stages").unwrap().as_array().unwrap();
+    // Parse terms
+    let query_terms_array = object.get("terms").unwrap().as_array().unwrap();
+    // Parse flavortext
+    let flavortext_value = object.get("flavortext");
+    println!("query_stages: {:?}", query_stages_array);
+    println!("query_terms: {:?}", query_terms_array);
+    println!("flavortext: {:?}", flavortext_value);
+
+    // Get query set, split by ","
+    let mut query_terms: Vec<String> = Vec::new();
+    for term_value in query_terms_array {
+        query_terms.push(term_value.as_str().unwrap().to_string());
+    }
+    let mut stages: Vec<QueryStage> = Vec::new();
+    for stage_value in query_stages_array {
+        let stage_str = stage_value.as_str().unwrap();
+        match stage_str {
+            "WikiAllStem" => stages.push(QueryStage::WikiAllStem),
+            "WikiArticleStem" => stages.push(QueryStage::WikiArticleStem),
+            "WikiArticleExact" => stages.push(QueryStage::WikiArticleExact),
+            "Synonym" => stages.push(QueryStage::Synonym),
+            _ => {}
+        }
+    }
+    let max_size: usize = 100000;
+    let association_dicts: Vec<HashMap<String, HashMap<String, String>>> = Vec::new();
+    let mut flavortext: Option<String> = None;
+    match flavortext_value {
+        Some(flavortext_json_value) => {
+            flavortext = Some(flavortext_json_value.to_string());
+        },
+        None => {}
+    }
+    return Query{query_terms, stages, max_size, association_dicts, flavortext};
+}
+
 fn handle_connection(mut stream: TcpStream, norm_index: Arc<impl Searchable>, table_index: Arc<impl Searchable>, syn_index: Arc<synonym_index::SynonymIndex>) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
@@ -321,19 +364,8 @@ fn handle_connection(mut stream: TcpStream, norm_index: Arc<impl Searchable>, ta
             }
         }
         let body: &mut [u8] = &mut buffer[res.unwrap()..end_body];
-        println!("body: {:?}", body);
-        let v: Value = simd_json::serde::from_slice(body).unwrap();
-        println!("{:?}", v);
-        let object = v.as_object().unwrap();
-        // Parse query stages array
-        let query_stages_array = object.get("stages").unwrap().as_array().unwrap();
-        // Parse terms
-        let query_terms = object.get("terms").unwrap().as_array().unwrap();
-        // Parse flavortext
-        let flavortext = object.get("flavortext").unwrap().as_str().unwrap();
-        println!("query_stages: {:?}", query_stages_array);
-        println!("query_terms: {:?}", query_terms);
-        println!("flavortext: {:?}", flavortext);
+        let query = parse_http_query(body);
+        let res = process_query(query, norm_index, table_index, syn_index);
         stream.write(response.as_bytes()).unwrap();
         stream.flush().unwrap();
     } else {

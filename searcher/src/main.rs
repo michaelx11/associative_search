@@ -324,6 +324,16 @@ fn handle_connection(mut stream: TcpStream, norm_index: Arc<impl Searchable>, ta
         println!("body: {:?}", body);
         let v: Value = simd_json::serde::from_slice(body).unwrap();
         println!("{:?}", v);
+        let object = v.as_object().unwrap();
+        // Parse query stages array
+        let query_stages_array = object.get("stages").unwrap().as_array().unwrap();
+        // Parse terms
+        let query_terms = object.get("terms").unwrap().as_array().unwrap();
+        // Parse flavortext
+        let flavortext = object.get("flavortext").unwrap().as_str().unwrap();
+        println!("query_stages: {:?}", query_stages_array);
+        println!("query_terms: {:?}", query_terms);
+        println!("flavortext: {:?}", flavortext);
         stream.write(response.as_bytes()).unwrap();
         stream.flush().unwrap();
     } else {

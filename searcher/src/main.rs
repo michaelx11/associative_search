@@ -2,6 +2,7 @@ extern crate serde_json;
 extern crate simd_json;
 extern crate searcher;
 extern crate fst;
+extern crate httparse;
 
 use std::thread;
 use std::collections::{HashMap, HashSet};
@@ -299,13 +300,45 @@ fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str, flavor
     return Query{query_terms, stages, max_size, association_dicts, flavortext};
 }
 
-fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0; 512];
+fn handle_connection(mut stream: TcpStream, norm_index: Arc<impl Searchable>, table_index: Arc<impl Searchable>, syn_index: Arc<synonym_index::SynonymIndex>) {
+    let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
 
-    let response = "HTTP/1.1 200 OK\r\n\r\n";
-    stream.write(response.as_bytes()).unwrap();
-    stream.flush().unwrap();
+    let mut headers = [httparse::EMPTY_HEADER; 16];
+    let mut req = httparse::Request::new(&mut headers);
+    let res = req.parse(&buffer).unwrap();
+    if !res.is_partial() {
+        let response = "HTTP/1.1 200 OK\r\n\r\n";
+        println!("Method: {:?}", req.method.unwrap_or("missing"));
+        println!("Path: {:?}", req.path.unwrap_or("no path"));
+        let start_body = res.unwrap();
+        let mut end_body = start_body;
+        for i in start_body..buffer.len() {
+            if buffer[i] != 0 {
+                end_body += 1;
+            } else {
+                break;
+            }
+        }
+        let body: &mut [u8] = &mut buffer[res.unwrap()..end_body];
+        println!("body: {:?}", body);
+        let v: Value = simd_json::serde::from_slice(body).unwrap();
+        println!("{:?}", v);
+        stream.write(response.as_bytes()).unwrap();
+        stream.flush().unwrap();
+    } else {
+        let response = "HTTP/1.1 413 Payload Too Large\r\n\r\n";
+        stream.write(response.as_bytes()).unwrap();
+        stream.flush().unwrap();
+    }
+//    println!("Res: {:?}", res);
+//    println!("Req: {:?}", req);
+//
+////    let results = process_query(query, norm_index, table_index, syn_index);
+//    println!("Results: {:?}", std::str::from_utf8(&buffer));
+//    let response = "HTTP/1.1 200 OK\r\n\r\n";
+//    stream.write(response.as_bytes()).unwrap();
+//    stream.flush().unwrap();
 }
 
 fn main() {
@@ -316,14 +349,6 @@ fn main() {
         return;
     }
     let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
-
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
-        thread::spawn(|| {
-            handle_connection(stream);
-        });
-        println!("Connection established!");
-    }
     let filename = &args[1];
     let threshold = args[2].parse::<usize>().unwrap();
     // Search set is a list of search items
@@ -337,28 +362,38 @@ fn main() {
     let table_index = Arc::new(indexer::generate_fst_index(table_index_filename, 1, false).unwrap());
     let norm_index = Arc::new(indexer::generate_inmemory_index(norm_index_filename, 1, true));
     println!("finished indexing in {}s", now.elapsed().as_secs());
-    while true {
-        let mut search_terms_line = String::new();
-        let mut query_stages_line = String::new();
-        let mut flavortext = String::new();
-        println!("Type comma-separated search terms, then enter>");
-        let stdin = io::stdin();
-        stdin.lock().read_line(&mut search_terms_line).unwrap();
-        println!("Type comma-separate search stages [WikiAllStem or Synonym (both as first only), WikiArticleStem, WikiArticleExact]>");
-        stdin.lock().read_line(&mut query_stages_line).unwrap();
-        println!("Type any flavortext to filter by (single line):");
-        stdin.lock().read_line(&mut flavortext).unwrap();
-        search_terms_line = search_terms_line.trim().to_string();
-        query_stages_line = query_stages_line.trim().to_string();
-        flavortext = flavortext.trim().to_string();
-        println!("Searching [{}] in stages [{}], with flavortext: [{}]", &search_terms_line, &query_stages_line, &flavortext);
-        let mut query = parse_interactive_query(&search_terms_line, &query_stages_line, &flavortext);
+    for stream in listener.incoming() {
+        let stream = stream.unwrap();
         let thread_table_index = table_index.clone();
         let thread_norm_index = norm_index.clone();
         let thread_syn_index = syn_index.clone();
         thread::spawn(|| {
-            let results = process_query(query, thread_norm_index, thread_table_index, thread_syn_index);
-            println!("Results: {:?}", results);
+            handle_connection(stream, thread_norm_index, thread_table_index, thread_syn_index);
         });
+        println!("Connection established!");
     }
+//    while true {
+//        let mut search_terms_line = String::new();
+//        let mut query_stages_line = String::new();
+//        let mut flavortext = String::new();
+//        println!("Type comma-separated search terms, then enter>");
+//        let stdin = io::stdin();
+//        stdin.lock().read_line(&mut search_terms_line).unwrap();
+//        println!("Type comma-separate search stages [WikiAllStem or Synonym (both as first only), WikiArticleStem, WikiArticleExact]>");
+//        stdin.lock().read_line(&mut query_stages_line).unwrap();
+//        println!("Type any flavortext to filter by (single line):");
+//        stdin.lock().read_line(&mut flavortext).unwrap();
+//        search_terms_line = search_terms_line.trim().to_string();
+//        query_stages_line = query_stages_line.trim().to_string();
+//        flavortext = flavortext.trim().to_string();
+//        println!("Searching [{}] in stages [{}], with flavortext: [{}]", &search_terms_line, &query_stages_line, &flavortext);
+//        let mut query = parse_interactive_query(&search_terms_line, &query_stages_line, &flavortext);
+//        let thread_table_index = table_index.clone();
+//        let thread_norm_index = norm_index.clone();
+//        let thread_syn_index = syn_index.clone();
+//        thread::spawn(|| {
+//            let results = process_query(query, thread_norm_index, thread_table_index, thread_syn_index);
+//            println!("Results: {:?}", results);
+//        });
+//    }
 }

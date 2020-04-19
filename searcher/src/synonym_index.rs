@@ -32,7 +32,6 @@ pub struct SynonymIndex {
     index: HashMap<String, Vec<usize>>
 }
 
-
 /**
  *
  */

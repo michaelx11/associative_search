@@ -25,7 +25,8 @@ enum QueryStage {
     WikiAllStem,
     WikiArticleStem,
     WikiArticleExact,
-    Synonym
+    Synonym,
+    Homophone
 }
 
 struct Query {
@@ -124,7 +125,11 @@ fn sum_subentries(map_of_maps: &HashMap<String, HashMap<String, String>>) -> usi
     return counter;
 }
 
-fn process_query(mut query_raw: Query, norm_index: Arc<impl Searchable>, table_index: Arc<impl Searchable>, syn_index: Arc<synonym_index::SynonymIndex>) -> String {
+fn process_query(mut query_raw: Query,
+                 norm_index: Arc<impl Searchable>,
+                 table_index: Arc<impl Searchable>,
+                 syn_index: Arc<synonym_index::SynonymIndex>,
+                 homophone_index: Arc<synonym_index::SynonymIndex>) -> String {
     let query_start = Instant::now();
     let mut query = &mut query_raw;
     for stage in query.stages.iter() {
@@ -169,7 +174,15 @@ fn process_query(mut query_raw: Query, norm_index: Arc<impl Searchable>, table_i
                     association_dict.extend(find_synonym_associations(&query.query_terms[..], &syn_index));
                     query.association_dicts.push(association_dict);
                 } else {
-                    eprintln!("Cannot do subfind on all wiki indexes, use WikiArticleRefs insead");
+                    eprintln!("Cannot do subfind with synonyms (cardinality explosion imminent)");
+                }
+            },
+            QueryStage::Homophone => {
+                if query.association_dicts.len() == 0 {
+                    association_dict.extend(find_synonym_associations(&query.query_terms[..], &homophone_index));
+                    query.association_dicts.push(association_dict);
+                } else {
+                    eprintln!("Cannot do subfind with homophones (cardinality explosion imminent)");
                 }
             },
         }
@@ -343,8 +356,12 @@ fn parse_http_query(body: &mut [u8]) -> Query {
     return Query{query_terms, stages, max_size, association_dicts, flavortext};
 }
 
-fn handle_connection(mut stream: TcpStream, norm_index: Arc<impl Searchable>, table_index: Arc<impl Searchable>, syn_index: Arc<synonym_index::SynonymIndex>) {
-    let mut buffer = [0; 1024];
+fn handle_connection(mut stream: TcpStream,
+                     norm_index: Arc<impl Searchable>,
+                     table_index: Arc<impl Searchable>,
+                     syn_index: Arc<synonym_index::SynonymIndex>,
+                     homophone_index: Arc<synonym_index::SynonymIndex>) {
+    let mut buffer = [0; 256 * 1024];
     stream.read(&mut buffer).unwrap();
 
     let mut headers = [httparse::EMPTY_HEADER; 16];
@@ -365,7 +382,7 @@ fn handle_connection(mut stream: TcpStream, norm_index: Arc<impl Searchable>, ta
         }
         let body: &mut [u8] = &mut buffer[res.unwrap()..end_body];
         let query = parse_http_query(body);
-        let res = process_query(query, norm_index, table_index, syn_index);
+        let res = process_query(query, norm_index, table_index, syn_index, homophone_index);
         stream.write(response.as_bytes()).unwrap();
         stream.flush().unwrap();
     } else {
@@ -373,14 +390,6 @@ fn handle_connection(mut stream: TcpStream, norm_index: Arc<impl Searchable>, ta
         stream.write(response.as_bytes()).unwrap();
         stream.flush().unwrap();
     }
-//    println!("Res: {:?}", res);
-//    println!("Req: {:?}", req);
-//
-////    let results = process_query(query, norm_index, table_index, syn_index);
-//    println!("Results: {:?}", std::str::from_utf8(&buffer));
-//    let response = "HTTP/1.1 200 OK\r\n\r\n";
-//    stream.write(response.as_bytes()).unwrap();
-//    stream.flush().unwrap();
 }
 
 fn main() {
@@ -399,8 +408,10 @@ fn main() {
     let table_index_filename = "big_table_index.txt";
     let norm_index_filename = "big_norm_index.txt";
     let synonym_index_filename = "moby_words.txt";
+    let homophone_index_filename = "homophone_list.txt";
     let now = Instant::now();
     let syn_index = Arc::new(synonym_index::generate_synonym_index(synonym_index_filename));
+    let homophone_index = Arc::new(synonym_index::generate_synonym_index(homophone_index_filename));
     let table_index = Arc::new(indexer::generate_fst_index(table_index_filename, 1, false).unwrap());
     let norm_index = Arc::new(indexer::generate_inmemory_index(norm_index_filename, 1, true));
     println!("finished indexing in {}s", now.elapsed().as_secs());
@@ -409,33 +420,10 @@ fn main() {
         let thread_table_index = table_index.clone();
         let thread_norm_index = norm_index.clone();
         let thread_syn_index = syn_index.clone();
+        let thread_homophone_index = homophone_index.clone();
         thread::spawn(|| {
-            handle_connection(stream, thread_norm_index, thread_table_index, thread_syn_index);
+            handle_connection(stream, thread_norm_index, thread_table_index, thread_syn_index, thread_homophone_index);
         });
         println!("Connection established!");
     }
-//    while true {
-//        let mut search_terms_line = String::new();
-//        let mut query_stages_line = String::new();
-//        let mut flavortext = String::new();
-//        println!("Type comma-separated search terms, then enter>");
-//        let stdin = io::stdin();
-//        stdin.lock().read_line(&mut search_terms_line).unwrap();
-//        println!("Type comma-separate search stages [WikiAllStem or Synonym (both as first only), WikiArticleStem, WikiArticleExact]>");
-//        stdin.lock().read_line(&mut query_stages_line).unwrap();
-//        println!("Type any flavortext to filter by (single line):");
-//        stdin.lock().read_line(&mut flavortext).unwrap();
-//        search_terms_line = search_terms_line.trim().to_string();
-//        query_stages_line = query_stages_line.trim().to_string();
-//        flavortext = flavortext.trim().to_string();
-//        println!("Searching [{}] in stages [{}], with flavortext: [{}]", &search_terms_line, &query_stages_line, &flavortext);
-//        let mut query = parse_interactive_query(&search_terms_line, &query_stages_line, &flavortext);
-//        let thread_table_index = table_index.clone();
-//        let thread_norm_index = norm_index.clone();
-//        let thread_syn_index = syn_index.clone();
-//        thread::spawn(|| {
-//            let results = process_query(query, thread_norm_index, thread_table_index, thread_syn_index);
-//            println!("Results: {:?}", results);
-//        });
-//    }
 }

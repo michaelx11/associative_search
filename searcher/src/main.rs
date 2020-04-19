@@ -21,6 +21,7 @@ use searcher::{indexer, stemmer, synonym_index};
 
 use searcher::indexer::Searchable;
 
+#[derive(Debug)]
 enum QueryStage {
     WikiAllStem,
     WikiArticleStem,
@@ -141,6 +142,7 @@ fn process_query(mut query_raw: Query,
                 break;
             }
         }
+        println!("stage: {:?}", stage);
         match stage {
             QueryStage::WikiAllStem => {
                 eprintln!("WikiAll Stage");
@@ -180,6 +182,7 @@ fn process_query(mut query_raw: Query,
             QueryStage::Homophone => {
                 if query.association_dicts.len() == 0 {
                     association_dict.extend(find_synonym_associations(&query.query_terms[..], &homophone_index));
+                    println!("homophone associations: {:?}", &association_dict);
                     query.association_dicts.push(association_dict);
                 } else {
                     eprintln!("Cannot do subfind with homophones (cardinality explosion imminent)");
@@ -301,6 +304,7 @@ fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str, flavor
             "WikiArticleStem" => stages.push(QueryStage::WikiArticleStem),
             "WikiArticleExact" => stages.push(QueryStage::WikiArticleExact),
             "Synonym" => stages.push(QueryStage::Synonym),
+            "Homophone" => stages.push(QueryStage::Homophone),
             _ => {}
         }
     }
@@ -310,6 +314,7 @@ fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str, flavor
     if flavortext_str.len() > 0 {
         flavortext = Some(flavortext_str.to_string());
     }
+    println!("num stages: {}", stages.len());
     return Query{query_terms, stages, max_size, association_dicts, flavortext};
 }
 
@@ -341,6 +346,7 @@ fn parse_http_query(body: &mut [u8]) -> Query {
             "WikiArticleStem" => stages.push(QueryStage::WikiArticleStem),
             "WikiArticleExact" => stages.push(QueryStage::WikiArticleExact),
             "Synonym" => stages.push(QueryStage::Synonym),
+            "Homophone" => stages.push(QueryStage::Homophone),
             _ => {}
         }
     }

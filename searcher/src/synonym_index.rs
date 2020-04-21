@@ -75,6 +75,9 @@ pub fn search_synonym_index(term: &str, index: &SynonymIndex) -> HashMap<String,
 
     let mut result_map: HashMap<String, String> = HashMap::new();
 
+    // original is always a synonym
+    result_map.insert(term.to_string(), term.to_string());
+
     match index.index.get(term) {
         Some(line_indexes) => {
             for line_num in line_indexes {

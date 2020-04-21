@@ -75,6 +75,7 @@ fn find_synonym_associations(search_set: &[String], index: &Arc<synonym_index::S
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
         let synonym_results = synonym_index::search_synonym_index(&term, index);
         for (syn, _) in synonym_results {
+            // Need to map syn -> syn otherwise if we use 'term' we'll only get the last entry
             entry.insert(syn.to_string(), syn.to_string());
         }
     }
@@ -82,7 +83,7 @@ fn find_synonym_associations(search_set: &[String], index: &Arc<synonym_index::S
 }
 
 fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>, norm_index: &Arc<impl Searchable>) -> HashMap<String, HashMap<String, String>> {
-    // map[item]-> map[article]->title
+    // map[item]-> map[article]->(title found in the article)
     let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
@@ -91,9 +92,25 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
 
             let title_match_key = match_title.to_string();
             let norm_results = norm_index.search(match_title, 0, true);
-//            println!("search term: {}, num results: {}", match_title, norm_results.len());
             for (article, title) in norm_results {
                 entry.insert(article.to_string(), title.to_string());
+            }
+        }
+    }
+    return association_dict;
+}
+
+fn subfind_synonyms(associations: &HashMap<String, HashMap<String, String>>, index: &Arc<synonym_index::SynonymIndex>) -> HashMap<String, HashMap<String, String>> {
+    // map[item]-> map[article]->(title found in the article)
+    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+    // Iterate through items in search set
+    for (term, subassociations) in associations.iter() {
+        let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
+        for (_, prev_match) in subassociations.iter() {
+
+            let synonym_results = synonym_index::search_synonym_index(&prev_match, index);
+            for (syn, _) in synonym_results {
+                entry.insert(syn.to_string(), syn.to_string());
             }
         }
     }
@@ -176,7 +193,10 @@ fn process_query(mut query_raw: Query,
                     association_dict.extend(find_synonym_associations(&query.query_terms[..], &syn_index));
                     query.association_dicts.push(association_dict);
                 } else {
-                    eprintln!("Cannot do subfind with synonyms (cardinality explosion imminent)");
+                    let latest_associations = &query.association_dicts.last().unwrap();
+                    eprintln!("Synonym subfind stage with {} associations", sum_subentries(latest_associations));
+                    association_dict.extend(subfind_synonyms(latest_associations, &syn_index));
+                    query.association_dicts.push(association_dict);
                 }
             },
             QueryStage::Homophone => {
@@ -185,7 +205,10 @@ fn process_query(mut query_raw: Query,
                     println!("homophone associations: {:?}", &association_dict);
                     query.association_dicts.push(association_dict);
                 } else {
-                    eprintln!("Cannot do subfind with homophones (cardinality explosion imminent)");
+                    let latest_associations = &query.association_dicts.last().unwrap();
+                    eprintln!("Synonym subfind stage with {} associations", sum_subentries(latest_associations));
+                    association_dict.extend(subfind_synonyms(latest_associations, &homophone_index));
+                    query.association_dicts.push(association_dict);
                 }
             },
         }

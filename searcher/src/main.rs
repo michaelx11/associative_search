@@ -103,7 +103,7 @@ fn subfind_associations(associations: &AssociationDict, norm_index: &Arc<impl Se
 
             let norm_results = norm_index.search(orig_search_child, 0, true);
             for (search_child, search_match) in norm_results {
-                entry.insert(search_child.to_string(), SearchMatch{search_term: term.to_string(), search_match: search_match.to_string()});
+                entry.insert(search_child.to_string(), SearchMatch{search_term: orig_search_child.to_string(), search_match: search_match.to_string()});
             }
         }
     }
@@ -120,7 +120,7 @@ fn subfind_synonyms(associations: &AssociationDict, index: &Arc<synonym_index::S
 
             let synonym_results = synonym_index::search_synonym_index(&orig_search_child, index);
             for (search_child, search_match) in synonym_results {
-                entry.insert(search_child.to_string(), SearchMatch{search_term: term.to_string(), search_match: search_match.to_string()});
+                entry.insert(search_child.to_string(), SearchMatch{search_term: orig_search_child.to_string(), search_match: search_match.to_string()});
             }
         }
     }
@@ -138,7 +138,7 @@ fn subfind_associations_map(associations: &AssociationDict, norm_index: &Arc<imp
             // search returns <result entry, what matched that entry's key>
             // since this is subfind we do 0 stemming and include the whole string
             for (search_child, search_match) in norm_index.search(orig_search_child, 0, true) {
-                entry.insert(search_child.to_string(), SearchMatch{search_term: term.to_string(), search_match: search_match.to_string()});
+                entry.insert(search_child.to_string(), SearchMatch{search_term: orig_search_child.to_string(), search_match: search_match.to_string()});
             }
         }
     }
@@ -153,7 +153,49 @@ fn sum_subentries(map_of_maps: &AssociationDict) -> usize {
     return counter;
 }
 
-fn score_and_construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) {
+fn construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) -> Vec<HashMap<String, Vec<String>>> {
+    let mut all_results: Vec<HashMap<String, Vec<String>>> = Vec::new();
+    let ARBITRARY_THRESHOLD = 10;
+    let mut num_processed = 0;
+    let last_association_dict = query.association_dicts.last().unwrap();
+    for score_pair in scored_pairs {
+        let mut match_chains: HashMap<String, Vec<String>> = HashMap::new();
+        for item in query.query_terms.iter() {
+            // last search match -> last search term -> previous search match -> previous search term
+            let mut chain: Vec<String> = Vec::new();
+            let item_string = item.to_string();
+            let mut current_association = &score_pair.association;
+            match last_association_dict[item].get(&score_pair.association) {
+                Some(v) => {
+                    // Start iterative construction
+                    let mut current_match = v;
+                    let num_stages = query.association_dicts.len();
+                    for stage_num in (0..num_stages).rev() {
+//                        eprintln!("current association: {:?}, current_match: {:?}", current_association, current_match);
+//                        eprintln!("stage num: {}, current match: {:?} for stage: {:?}", stage_num, current_match, query.stages[stage_num]);
+//                        eprintln!("would be matching {:?} for {:?}", &query.association_dicts.get(stage_num).unwrap()[item].get(current_association), current_association);
+                        current_match = &query.association_dicts.get(stage_num).unwrap()[item][current_association];
+                        chain.push(current_association.to_string());
+                        chain.push(current_match.search_match.to_string());
+                        chain.push(current_match.search_term.to_string());
+                        chain.push(format!("{:?}", query.stages[stage_num]));
+                        current_association = &current_match.search_term;
+                    }
+                },
+                _ => {}
+            };
+            match_chains.insert(item_string, chain.iter().rev().cloned().collect());
+//            match_chains.insert(item_string, chain);
+        }
+        num_processed += 1;
+        println!("{}: {}: {:?}", score_pair.score, &score_pair.association, match_chains);
+        all_results.push(match_chains);
+        if num_processed > ARBITRARY_THRESHOLD {
+            eprintln!("Terminating early at score: {}", score_pair.score);
+            break;
+        }
+    }
+    return all_results;
 }
 
 fn process_query(mut query_raw: Query,
@@ -301,33 +343,11 @@ fn process_query(mut query_raw: Query,
         }
         scored_pairs.push(ScorePair{score: score, association: assoc.to_string()});
     }
+    // Go through each scored pair
+    scored_pairs.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
     println!("Total scored associations: {}", scored_pairs.len());
     // Need to sort f64s that don't implement Eq (damn you Rust), we no there are no NaNs
-    scored_pairs.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-    let ARBITRARY_THRESHOLD = 100;
-    let mut num_displayed = 0;
-    for score_pair in scored_pairs {
-        let mut display_map: HashMap<String, Option<&SearchMatch>> = HashMap::new();
-        let mut chains: HashMap<String, Vec<SearchMatch>> = HashMap::new();
-        for item in query.query_terms.iter() {
-            let item_string = item.to_string();
-            let last_match: String = match last_association_dict[item].get(&score_pair.association) {
-                Some(v) => {
-                    v.search_match.to_string()
-                },
-                _ => {
-                    "[NONE]".to_string()
-                }
-            };
-            display_map.insert(item_string, last_association_dict[item].get(&score_pair.association));
-        }
-        num_displayed += 1;
-        println!("{}: {}: {:?}", score_pair.score, &score_pair.association, display_map);
-        if num_displayed > ARBITRARY_THRESHOLD {
-            println!("Terminating early at score: {}", score_pair.score);
-            break;
-        }
-    }
+    construct_chains(&query, scored_pairs);
 
     return "".to_string();
 }

@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::net::TcpStream;
 use std::net::TcpListener;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use searcher::{indexer, stemmer, synonym_index};
 
@@ -155,7 +155,7 @@ fn sum_subentries(map_of_maps: &AssociationDict) -> usize {
 
 fn construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) -> Vec<HashMap<String, Vec<String>>> {
     let mut all_results: Vec<HashMap<String, Vec<String>>> = Vec::new();
-    let ARBITRARY_THRESHOLD = 10;
+    let ARBITRARY_THRESHOLD = 100;
     let mut num_processed = 0;
     let last_association_dict = query.association_dicts.last().unwrap();
     for score_pair in scored_pairs {
@@ -171,9 +171,6 @@ fn construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) -> Vec<HashMap<
                     let mut current_match = v;
                     let num_stages = query.association_dicts.len();
                     for stage_num in (0..num_stages).rev() {
-//                        eprintln!("current association: {:?}, current_match: {:?}", current_association, current_match);
-//                        eprintln!("stage num: {}, current match: {:?} for stage: {:?}", stage_num, current_match, query.stages[stage_num]);
-//                        eprintln!("would be matching {:?} for {:?}", &query.association_dicts.get(stage_num).unwrap()[item].get(current_association), current_association);
                         current_match = &query.association_dicts.get(stage_num).unwrap()[item][current_association];
                         chain.push(current_association.to_string());
                         chain.push(current_match.search_match.to_string());
@@ -185,7 +182,6 @@ fn construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) -> Vec<HashMap<
                 _ => {}
             };
             match_chains.insert(item_string, chain.iter().rev().cloned().collect());
-//            match_chains.insert(item_string, chain);
         }
         num_processed += 1;
         println!("{}: {}: {:?}", score_pair.score, &score_pair.association, match_chains);
@@ -211,7 +207,7 @@ fn process_query(mut query_raw: Query,
             let total_entries = sum_subentries(query.association_dicts.last().unwrap());
             if  total_entries > query.max_size {
                 eprintln!("Aborting search as {} > maximum size {} for any association stage was exceeded.", total_entries, query.max_size);
-                break;
+                return format!("{{\"error\": \"maximum working size {} exceeded max {} for stage: {:?} (#{})\"}}", total_entries, query.max_size, stage, query.association_dicts.len());
             }
         }
         println!("stage: {:?}", stage);
@@ -343,13 +339,10 @@ fn process_query(mut query_raw: Query,
         }
         scored_pairs.push(ScorePair{score: score, association: assoc.to_string()});
     }
-    // Go through each scored pair
+    // Need to sort f64s that don't implement Eq (damn you Rust), we no there are no NaNs
     scored_pairs.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
     println!("Total scored associations: {}", scored_pairs.len());
-    // Need to sort f64s that don't implement Eq (damn you Rust), we no there are no NaNs
-    construct_chains(&query, scored_pairs);
-
-    return "".to_string();
+    return json!(construct_chains(&query, scored_pairs)).to_string();
 }
 
 fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str, flavortext_str: &str) -> Query {
@@ -450,7 +443,7 @@ fn handle_connection(mut stream: TcpStream,
         let body: &mut [u8] = &mut buffer[res.unwrap()..end_body];
         let query = parse_http_query(body);
         let res = process_query(query, norm_index, table_index, syn_index, homophone_index);
-        stream.write(response.as_bytes()).unwrap();
+        stream.write(format!("{}{}", response, res).as_bytes()).unwrap();
         stream.flush().unwrap();
     } else {
         let response = "HTTP/1.1 413 Payload Too Large\r\n\r\n";

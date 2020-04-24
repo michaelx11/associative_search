@@ -34,7 +34,7 @@ struct Query {
     query_terms: Vec<String>,
     stages: Vec<QueryStage>,
     max_size: usize,
-    association_dicts: Vec<HashMap<String, HashMap<String, String>>>,
+    association_dicts: Vec<AssociationDict>,
     // Purely for scoring, TODO: make this structured in some kind of sane way
     flavortext: Option<String>
 }
@@ -45,6 +45,17 @@ struct ScorePair {
     association: String
 }
 
+// This struct stores 1) original search term 2) the match
+// e.g. book -> book of job
+// this is to help us retrace our steps through association phases
+#[derive(Debug)]
+struct SearchMatch {
+    search_term: String,
+    search_match: String
+}
+
+type AssociationDict = HashMap<String, HashMap<String, SearchMatch>>;
+
 // The output is wrapped in a Result to allow matching on errors
 // Returns an Iterator to the Reader of the lines of the file.
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
@@ -53,38 +64,38 @@ where P: AsRef<Path>, {
     Ok(io::BufReader::new(file).lines())
 }
 
-fn find_associations(search_set: &[String], norm_index: &Arc<impl Searchable>, table_index: &Arc<impl Searchable>) -> HashMap<String, HashMap<String, String>> {
-    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+fn find_associations(search_set: &[String], norm_index: &Arc<impl Searchable>, table_index: &Arc<impl Searchable>) -> AssociationDict {
+    let mut association_dict: AssociationDict = HashMap::new();
     for term in search_set {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
         let norm_results = norm_index.search(&term, 1, false);
         let table_results = table_index.search(&term, 1, false);
         for (search_child, search_match) in norm_results {
-            entry.insert(search_child.to_string(), search_match.to_string());
+            entry.insert(search_child.to_string(), SearchMatch{search_term: term.to_string(), search_match: search_match.to_string()});
         }
         for (search_child, search_match) in table_results {
-            entry.insert(search_child.to_string(), search_match.to_string());
+            entry.insert(search_child.to_string(), SearchMatch{search_term: term.to_string(), search_match: search_match.to_string()});
         }
     }
     return association_dict;
 }
 
-fn find_synonym_associations(search_set: &[String], index: &Arc<synonym_index::SynonymIndex>) -> HashMap<String, HashMap<String, String>> {
-    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+fn find_synonym_associations(search_set: &[String], index: &Arc<synonym_index::SynonymIndex>) -> AssociationDict {
+    let mut association_dict: AssociationDict = HashMap::new();
     for term in search_set {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
         let synonym_results = synonym_index::search_synonym_index(&term, index);
         for (syn, _) in synonym_results {
             // Need to map syn -> syn otherwise if we use 'term' we'll only get the last entry
-            entry.insert(syn.to_string(), term.to_string());
+            entry.insert(syn.to_string(), SearchMatch{search_term: term.to_string(), search_match: term.to_string()});
         }
     }
     return association_dict;
 }
 
-fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>, norm_index: &Arc<impl Searchable>) -> HashMap<String, HashMap<String, String>> {
+fn subfind_associations(associations: &AssociationDict, norm_index: &Arc<impl Searchable>) -> AssociationDict {
     // map[item]-> map[article]->(title found in the article)
-    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+    let mut association_dict: AssociationDict = HashMap::new();
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
@@ -92,16 +103,16 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
 
             let norm_results = norm_index.search(orig_search_child, 0, true);
             for (search_child, search_match) in norm_results {
-                entry.insert(search_child.to_string(), search_match.to_string());
+                entry.insert(search_child.to_string(), SearchMatch{search_term: term.to_string(), search_match: search_match.to_string()});
             }
         }
     }
     return association_dict;
 }
 
-fn subfind_synonyms(associations: &HashMap<String, HashMap<String, String>>, index: &Arc<synonym_index::SynonymIndex>) -> HashMap<String, HashMap<String, String>> {
+fn subfind_synonyms(associations: &AssociationDict, index: &Arc<synonym_index::SynonymIndex>) -> AssociationDict {
     // map[item]-> map[article]->(title found in the article)
-    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+    let mut association_dict: AssociationDict = HashMap::new();
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
@@ -109,16 +120,16 @@ fn subfind_synonyms(associations: &HashMap<String, HashMap<String, String>>, ind
 
             let synonym_results = synonym_index::search_synonym_index(&orig_search_child, index);
             for (search_child, search_match) in synonym_results {
-                entry.insert(search_child.to_string(), search_match.to_string());
+                entry.insert(search_child.to_string(), SearchMatch{search_term: term.to_string(), search_match: search_match.to_string()});
             }
         }
     }
     return association_dict;
 }
 
-fn subfind_associations_map(associations: &HashMap<String, HashMap<String, String>>, norm_index: &Arc<impl Searchable>) -> HashMap<String, HashMap<String, String>> {
+fn subfind_associations_map(associations: &AssociationDict, norm_index: &Arc<impl Searchable>) -> AssociationDict {
     // map[item]-> map[article]->title
-    let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+    let mut association_dict: AssociationDict = HashMap::new();
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
@@ -127,19 +138,22 @@ fn subfind_associations_map(associations: &HashMap<String, HashMap<String, Strin
             // search returns <result entry, what matched that entry's key>
             // since this is subfind we do 0 stemming and include the whole string
             for (search_child, search_match) in norm_index.search(orig_search_child, 0, true) {
-                entry.insert(search_child.to_string(), search_match.to_string());
+                entry.insert(search_child.to_string(), SearchMatch{search_term: term.to_string(), search_match: search_match.to_string()});
             }
         }
     }
     return association_dict;
 }
 
-fn sum_subentries(map_of_maps: &HashMap<String, HashMap<String, String>>) -> usize {
+fn sum_subentries(map_of_maps: &AssociationDict) -> usize {
     let mut counter: usize = 0;
     for (_, submap) in map_of_maps {
         counter += submap.len();
     }
     return counter;
+}
+
+fn score_and_construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) {
 }
 
 fn process_query(mut query_raw: Query,
@@ -150,7 +164,7 @@ fn process_query(mut query_raw: Query,
     let query_start = Instant::now();
     let mut query = &mut query_raw;
     for stage in query.stages.iter() {
-        let mut association_dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+        let mut association_dict: AssociationDict = HashMap::new();
         if query.association_dicts.len() > 0 {
             let total_entries = sum_subentries(query.association_dicts.last().unwrap());
             if  total_entries > query.max_size {
@@ -293,14 +307,19 @@ fn process_query(mut query_raw: Query,
     let ARBITRARY_THRESHOLD = 100;
     let mut num_displayed = 0;
     for score_pair in scored_pairs {
-        let mut display_map: HashMap<String, String> = HashMap::new();
+        let mut display_map: HashMap<String, Option<&SearchMatch>> = HashMap::new();
+        let mut chains: HashMap<String, Vec<SearchMatch>> = HashMap::new();
         for item in query.query_terms.iter() {
             let item_string = item.to_string();
             let last_match: String = match last_association_dict[item].get(&score_pair.association) {
-                Some(v) => v.to_string(),
-                _ => "[NONE]".to_string()
+                Some(v) => {
+                    v.search_match.to_string()
+                },
+                _ => {
+                    "[NONE]".to_string()
+                }
             };
-            display_map.insert(item_string, last_match.to_string());
+            display_map.insert(item_string, last_association_dict[item].get(&score_pair.association));
         }
         num_displayed += 1;
         println!("{}: {}: {:?}", score_pair.score, &score_pair.association, display_map);
@@ -331,7 +350,7 @@ fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str, flavor
         }
     }
     let max_size: usize = 100000;
-    let association_dicts: Vec<HashMap<String, HashMap<String, String>>> = Vec::new();
+    let association_dicts: Vec<AssociationDict> = Vec::new();
     let mut flavortext: Option<String> = None;
     if flavortext_str.len() > 0 {
         flavortext = Some(flavortext_str.to_string());
@@ -373,7 +392,7 @@ fn parse_http_query(body: &mut [u8]) -> Query {
         }
     }
     let max_size: usize = 100000;
-    let association_dicts: Vec<HashMap<String, HashMap<String, String>>> = Vec::new();
+    let association_dicts: Vec<AssociationDict> = Vec::new();
     let mut flavortext: Option<String> = None;
     match flavortext_value {
         Some(flavortext_json_value) => {

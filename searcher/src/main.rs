@@ -59,11 +59,11 @@ fn find_associations(search_set: &[String], norm_index: &Arc<impl Searchable>, t
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
         let norm_results = norm_index.search(&term, 1, false);
         let table_results = table_index.search(&term, 1, false);
-        for (article, title) in norm_results {
-            entry.insert(article.to_string(), title.to_string());
+        for (search_child, search_match) in norm_results {
+            entry.insert(search_child.to_string(), search_match.to_string());
         }
-        for (article, title) in table_results {
-            entry.insert(article.to_string(), title.to_string());
+        for (search_child, search_match) in table_results {
+            entry.insert(search_child.to_string(), search_match.to_string());
         }
     }
     return association_dict;
@@ -76,7 +76,7 @@ fn find_synonym_associations(search_set: &[String], index: &Arc<synonym_index::S
         let synonym_results = synonym_index::search_synonym_index(&term, index);
         for (syn, _) in synonym_results {
             // Need to map syn -> syn otherwise if we use 'term' we'll only get the last entry
-            entry.insert(syn.to_string(), syn.to_string());
+            entry.insert(syn.to_string(), term.to_string());
         }
     }
     return association_dict;
@@ -88,12 +88,11 @@ fn subfind_associations(associations: &HashMap<String, HashMap<String, String>>,
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-        for (_, match_title) in subassociations.iter() {
+        for (orig_search_child, orig_search_match) in subassociations.iter() {
 
-            let title_match_key = match_title.to_string();
-            let norm_results = norm_index.search(match_title, 0, true);
-            for (article, title) in norm_results {
-                entry.insert(article.to_string(), title.to_string());
+            let norm_results = norm_index.search(orig_search_child, 0, true);
+            for (search_child, search_match) in norm_results {
+                entry.insert(search_child.to_string(), search_match.to_string());
             }
         }
     }
@@ -106,11 +105,11 @@ fn subfind_synonyms(associations: &HashMap<String, HashMap<String, String>>, ind
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-        for (_, prev_match) in subassociations.iter() {
+        for (orig_search_child, orig_search_match) in subassociations.iter() {
 
-            let synonym_results = synonym_index::search_synonym_index(&prev_match, index);
-            for (syn, _) in synonym_results {
-                entry.insert(syn.to_string(), syn.to_string());
+            let synonym_results = synonym_index::search_synonym_index(&orig_search_child, index);
+            for (search_child, search_match) in synonym_results {
+                entry.insert(search_child.to_string(), search_match.to_string());
             }
         }
     }
@@ -123,12 +122,12 @@ fn subfind_associations_map(associations: &HashMap<String, HashMap<String, Strin
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-        for (_, prev_title) in subassociations.iter() {
+        for (orig_search_child, orig_search_match) in subassociations.iter() {
 
             // search returns <result entry, what matched that entry's key>
             // since this is subfind we do 0 stemming and include the whole string
-            for (matching_result, prev_title_stem) in norm_index.search(prev_title, 0, true) {
-                entry.insert(matching_result.to_string(), prev_title_stem.to_string());
+            for (search_child, search_match) in norm_index.search(orig_search_child, 0, true) {
+                entry.insert(search_child.to_string(), search_match.to_string());
             }
         }
     }

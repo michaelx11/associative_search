@@ -26,11 +26,11 @@ function fillBasicDemo() {
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
 
-    searchTermsArea.value = 'manning,bradshaw,brady';
+    searchTermsArea.value = 'shaq,claws,alienist,ship';
     searchStagesArea.value = 'WikiArticleStem';
     flavortextArea.value = '';
 
-    clearAndFillDisplayArea('Simple query inspired by https://pennypark.fun/puzzle/trebuchet, a query this simple can just be Googled but its a start.')
+    clearAndFillDisplayArea('Simple query inspired by https://pennypark.fun/puzzle/trebuchet, a query this simple can just be Googled but its a start.\n\nNote that we removed extra common words like "the", in a stemmed search these can blow the query up.')
 }
 
 function fillHomophoneDemo() {

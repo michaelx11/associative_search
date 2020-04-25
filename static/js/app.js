@@ -26,9 +26,9 @@ function fillBasicDemo() {
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
 
-    searchTermsArea.textContent = 'manning,bradshaw,brady';
-    searchStagesArea.textContent = 'WikiArticleStem';
-    flavortextArea.textContent = '';
+    searchTermsArea.value = 'manning,bradshaw,brady';
+    searchStagesArea.value = 'WikiArticleStem';
+    flavortextArea.value = '';
 }
 
 function fillHomophoneDemo() {
@@ -36,9 +36,9 @@ function fillHomophoneDemo() {
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
 
-    searchTermsArea.textContent = 'symbol,coral,cord,loot';
-    searchStagesArea.textContent = 'Homophone,WikiArticleStem';
-    flavortextArea.textContent = '';
+    searchTermsArea.value = 'symbol,coral,cord,loot';
+    searchStagesArea.value = 'Homophone,WikiArticleStem';
+    flavortextArea.value = '';
 }
 
 function fillOneStageDemo() {
@@ -46,9 +46,9 @@ function fillOneStageDemo() {
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
 
-    searchTermsArea.textContent = 'cats-eye,red devil,tom bowler,agate';
-    searchStagesArea.textContent = 'WikiAllStem';
-    flavortextArea.textContent = '';
+    searchTermsArea.value = 'cats-eye,red devil,tom bowler,agate';
+    searchStagesArea.value = 'WikiAllStem';
+    flavortextArea.value = '';
 }
 
 function fillTwoStageDemo() {
@@ -56,37 +56,37 @@ function fillTwoStageDemo() {
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
 
-    searchTermsArea.textContent = 'head,money,skip,pronounce';
-    searchStagesArea.textContent = 'Synonym,WikiArticleStem';
-    flavortextArea.textContent = 'moon';
+    searchTermsArea.value = 'head,money,skip,pronounce';
+    searchStagesArea.value = 'Synonym,WikiArticleStem';
+    flavortextArea.value = 'moon';
     clearAndFillDisplayArea('This is a longer demo inspired by https://pennypark.fun/puzzle/spaceopolis/solution');
 }
 
 function addStage(stageName) {
     let searchStagesArea = document.getElementById("searchStagesArea");
-    console.log(searchStagesArea.textContent);
-    var stages = searchStagesArea.textContent.split(',');
+    console.log(searchStagesArea.value);
+    var stages = searchStagesArea.value.split(',');
     console.log(stages);
     if (stages.length == 1 && stages[0] === '') {
         stages = [stageName];
     } else {
         stages.push(stageName);
     }
-    searchStagesArea.textContent = stages.join(',');
+    searchStagesArea.value = stages.join(',');
 }
 
 function removeStage() {
     let searchStagesArea = document.getElementById("searchStagesArea");
-    var stages = searchStagesArea.textContent.split(',');
+    var stages = searchStagesArea.value.split(',');
     if (stages.length > 0) {
         stages.pop();
     }
-    searchStagesArea.textContent = stages.join(',');
+    searchStagesArea.value = stages.join(',');
 }
 
 function clearFlavortext() {
     let flavortextArea = document.getElementById("flavortextArea");
-    flavortextArea.textContent = '';
+    flavortextArea.value = '';
 }
 
 function truncateSearchMatch(searchTerm, searchMatch) {
@@ -174,10 +174,11 @@ function executeQuery() {
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
 
+    console.log(searchTermsArea.value);
     let payload = {
-        'stages': searchStagesArea.textContent.split(','),
-        'terms': searchTermsArea.textContent.split(','),
-        'flavortext': flavortextArea.textContent
+        'stages': searchStagesArea.value.split(','),
+        'terms': searchTermsArea.value.split(','),
+        'flavortext': flavortextArea.value
     }
 
     var xhr = new XMLHttpRequest();

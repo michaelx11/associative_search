@@ -431,20 +431,60 @@ fn handle_connection(mut stream: TcpStream,
         let response = "HTTP/1.1 200 OK\r\n\r\n";
         println!("Method: {:?}", req.method.unwrap_or("missing"));
         println!("Path: {:?}", req.path.unwrap_or("no path"));
-        let start_body = res.unwrap();
-        let mut end_body = start_body;
-        for i in start_body..buffer.len() {
-            if buffer[i] != 0 {
-                end_body += 1;
-            } else {
-                break;
+        match req.method {
+            Some("GET") => {
+                println!("GET REQUEST");
+                match req.path {
+                    Some("/") => {
+                        let mut file = File::open("static/index.html").unwrap();
+                        let mut buffer = String::new();
+                        file.read_to_string(&mut buffer);
+                        stream.write(format!("{}{}", response, buffer).as_bytes()).unwrap();
+                        stream.flush().unwrap();
+                    },
+                    Some("/js/app.js") => {
+                        let mut file = File::open("static/js/app.js").unwrap();
+                        let mut buffer = String::new();
+                        file.read_to_string(&mut buffer);
+                        stream.write(format!("{}{}", response, buffer).as_bytes()).unwrap();
+                        stream.flush().unwrap();
+                    },
+                    Some("/css/main.css") => {
+                        let mut file = File::open("static/css/main.css").unwrap();
+                        let mut buffer = String::new();
+                        file.read_to_string(&mut buffer);
+                        stream.write(format!("{}{}", response, buffer).as_bytes()).unwrap();
+                        stream.flush().unwrap();
+                    },
+                    _ => {
+                        stream.write(response.as_bytes()).unwrap();
+                        stream.flush().unwrap();
+                    }
+                }
+            },
+            Some("POST") => {
+                println!("POST REQUEST");
+                let start_body = res.unwrap();
+                let mut end_body = start_body;
+                for i in start_body..buffer.len() {
+                    if buffer[i] != 0 {
+                        end_body += 1;
+                    } else {
+                        break;
+                    }
+                }
+                let body: &mut [u8] = &mut buffer[res.unwrap()..end_body];
+                let query = parse_http_query(body);
+                let res = process_query(query, norm_index, table_index, syn_index, homophone_index);
+                stream.write(format!("{}{}", response, res).as_bytes()).unwrap();
+                stream.flush().unwrap();
+            },
+            _ => {
+                let response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
+                stream.write(response.as_bytes()).unwrap();
+                stream.flush().unwrap();
             }
         }
-        let body: &mut [u8] = &mut buffer[res.unwrap()..end_body];
-        let query = parse_http_query(body);
-        let res = process_query(query, norm_index, table_index, syn_index, homophone_index);
-        stream.write(format!("{}{}", response, res).as_bytes()).unwrap();
-        stream.flush().unwrap();
     } else {
         let response = "HTTP/1.1 413 Payload Too Large\r\n\r\n";
         stream.write(response.as_bytes()).unwrap();

@@ -21,8 +21,37 @@
 // SOFTWARE.
 
 // === Demo Functions ===
-
 function fillSynonymDemo() {
+    let searchTermsArea = document.getElementById("searchTermsArea");
+    let searchStagesArea = document.getElementById("searchStagesArea");
+    let flavortextArea = document.getElementById("flavortextArea");
+
+    searchTermsArea.textContent = '';
+    searchStagesArea.textContent = 'Synonym,WikiArticleStem';
+    flavortextArea.textContent = '';
+}
+
+function fillHomophoneDemo() {
+    let searchTermsArea = document.getElementById("searchTermsArea");
+    let searchStagesArea = document.getElementById("searchStagesArea");
+    let flavortextArea = document.getElementById("flavortextArea");
+
+    searchTermsArea.textContent = 'symbol,coral,cord,loot';
+    searchStagesArea.textContent = 'Homophone,WikiArticleStem';
+    flavortextArea.textContent = '';
+}
+
+function fillOneStageDemo() {
+    let searchTermsArea = document.getElementById("searchTermsArea");
+    let searchStagesArea = document.getElementById("searchStagesArea");
+    let flavortextArea = document.getElementById("flavortextArea");
+
+    searchTermsArea.textContent = 'cats-eye,red devil,tom bowler,agate';
+    searchStagesArea.textContent = 'WikiAllStem';
+    flavortextArea.textContent = '';
+}
+
+function fillTwoStageDemo() {
     let searchTermsArea = document.getElementById("searchTermsArea");
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
@@ -59,7 +88,14 @@ function clearFlavortext() {
     flavortextArea.textContent = '';
 }
 
-function handleResponse(response) {
+function handleResponse(responseText) {
+    var response_object = JSON.parse(responseText);
+    let displayArea = document.getElementById("displayArea");
+    if (response_object['error']) {
+        clearAndFillDisplayArea(response_object['error']);
+    } else {
+        clearAndFillDisplayArea(responseText);
+    }
 }
 
 function executeQuery() {
@@ -81,10 +117,12 @@ function executeQuery() {
         if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
             // Request finished. Do processing here.
             console.log(this);
-            handleResponse(this);
+            handleResponse(this.responseText);
+            hideWaiting();
         }
     }
     xhr.send(JSON.stringify(payload));
+    showWaiting();
 }
 
 // === UI Functions ===
@@ -97,14 +135,6 @@ function hideWaiting() {
   document.getElementById('waitingAlert').setAttribute('style', 'display:none;');
 }
 
-function clearAndFillDebugArea(text) {
-  document.getElementById('debugArea').textContent = text;
-}
-
-function formatOpensslInstructions(sigEncoded, payloadEncoded, exportedPubKeyEncoded) {
-  var instructionBlock = 'echo "' + sigEncoded + '" | base64 --decode > sig.bin;\n';
-  instructionBlock += 'echo "' + payloadEncoded + '" | base64 --decode > payload.bin;\n';
-  instructionBlock += 'echo "' + exportedPubKeyEncoded + '" | base64 --decode > ec.pub;\n';
-  instructionBlock += 'openssl dgst -sha256 -verify ec.pub -signature sig.bin payload.bin;'
-  return instructionBlock;
+function clearAndFillDisplayArea(text) {
+  document.getElementById('displayArea').textContent = text;
 }

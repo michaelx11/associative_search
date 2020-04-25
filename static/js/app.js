@@ -21,13 +21,13 @@
 // SOFTWARE.
 
 // === Demo Functions ===
-function fillSynonymDemo() {
+function fillBasicDemo() {
     let searchTermsArea = document.getElementById("searchTermsArea");
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
 
-    searchTermsArea.textContent = '';
-    searchStagesArea.textContent = 'Synonym,WikiArticleStem';
+    searchTermsArea.textContent = 'manning,bradshaw,brady';
+    searchStagesArea.textContent = 'WikiArticleStem';
     flavortextArea.textContent = '';
 }
 

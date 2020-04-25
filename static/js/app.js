@@ -56,9 +56,10 @@ function fillTwoStageDemo() {
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
 
-    searchTermsArea.textContent = 'symbol,coral,cord,loot';
-    searchStagesArea.textContent = 'Homophone,WikiArticleStem';
-    flavortextArea.textContent = '';
+    searchTermsArea.textContent = 'head,money,skip,pronounce';
+    searchStagesArea.textContent = 'Synonym,WikiArticleStem';
+    flavortextArea.textContent = 'moon';
+    clearAndFillDisplayArea('This is a longer demo inspired by https://pennypark.fun/puzzle/spaceopolis/solution');
 }
 
 function addStage(stageName) {
@@ -193,6 +194,7 @@ function executeQuery() {
     }
     xhr.send(JSON.stringify(payload));
     showWaiting();
+    clearAndFillDisplayArea('');
 }
 
 // === UI Functions ===

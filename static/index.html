@@ -18,16 +18,16 @@
         </p>
         <span>
           <button onclick="fillSynonymDemo()">
-            synonym demo
+            Synonym Demo
           </button>
           <button onclick="fillHomophoneDemo()">
-            homophone demo
+            Homophone Demo
           </button>
           <button onclick="fillOneStageDemo()">
-            one stage demo
+            Single Stage Demo
           </button>
           <button onclick="fillTwoStageDemo()">
-            two stage demo
+            Two Stage Demo
           </button>
         </span>
         <textarea id="searchTermsArea"></textarea>
@@ -84,6 +84,29 @@
     <div class="dumpcolumn">
       <h2 id='waitingAlert' style="display:none;">Calculating...</h2>
       <pre id='displayArea'>
+Hi and welcome to Associative Search. This service takes a list of words and attempts
+to find a single association that best fits the group. Go ahead and click "Two Stage Demo" then "Run Query"
+to see an example in action.
+
+The basic usage is:
+
+1) Provide comma-separated search terms
+2) Choose stages to execute with (explained below)
+3) Provide flavortext for scoring (or don't)
+4) Run Query (and wait up to 2 mins or so)
+
+Stages:
+- Wiki Sub-Articles (Stemmed) tries to find Wikipedia Articles that contain references to your search terms.
+"Stemmed" means we break the article names into stems and search those instead of exact matches.
+- Wiki Sub-Articles (Exact) does the same but with exact title matches
+- Wiki Sub-Items (Stemmed) does a similar search but includes list items and table items, it can get a little messy
+but broadens the search significantly.
+- Synonym - Expands search set by synonyms of current search set. Be careful using this after a Wiki step!
+- Homophone - Expands search set by homophones of current search set. Also be careful with this (less so than Synonym)
+
+You can stack these stages to broaden your search. For example, no single article on Wikipedia contains all films.
+However, there is an article that contains links to 'Films that start with letter X'. In this case you can do a 
+two stage search to find out if all your search terms are parts of some film title!
       </pre>
     </div>
   </div>

@@ -29,6 +29,8 @@ function fillBasicDemo() {
     searchTermsArea.value = 'manning,bradshaw,brady';
     searchStagesArea.value = 'WikiArticleStem';
     flavortextArea.value = '';
+
+    clearAndFillDisplayArea('Simple query inspired by https://pennypark.fun/puzzle/trebuchet, a query this simple can just be Googled but its a start.')
 }
 
 function fillHomophoneDemo() {
@@ -39,6 +41,8 @@ function fillHomophoneDemo() {
     searchTermsArea.value = 'symbol,coral,cord,loot';
     searchStagesArea.value = 'Homophone,WikiArticleStem';
     flavortextArea.value = '';
+
+    clearAndFillDisplayArea('Simple query to demonstrate how homophone search can be used.')
 }
 
 function fillOneStageDemo() {
@@ -46,9 +50,10 @@ function fillOneStageDemo() {
     let searchStagesArea = document.getElementById("searchStagesArea");
     let flavortextArea = document.getElementById("flavortextArea");
 
-    searchTermsArea.value = 'cats-eye,red devil,tom bowler,agate';
+    searchTermsArea.value = 'drugstore,urban';
     searchStagesArea.value = 'WikiAllStem';
     flavortextArea.value = '';
+    clearAndFillDisplayArea('Interesting query, where urban and drugstore are both part of cowboy films: http://web.mit.edu/puzzle/www/2012/puzzles/phantom_of_the_operator/set_theory/\n\nIn the search results look for "list of drama films of the 1980s"')
 }
 
 function fillTwoStageDemo() {

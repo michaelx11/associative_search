@@ -95,7 +95,7 @@ function clearFlavortext() {
 }
 
 function truncateSearchMatch(searchTerm, searchMatch) {
-    let index = searchMatch.indexOf(searchTerm);
+    let index = searchMatch.toLowerCase().indexOf(searchTerm.toLowerCase());
     if (index == -1) {
         return searchMatch.substring(0, 30);
     } else {
@@ -109,7 +109,7 @@ function truncateSearchMatch(searchTerm, searchMatch) {
         if (end < searchMatch.length) {
             suffix = '...'
         }
-        return prefix + searchMatch.substring(Math.max(0, index - 15), Math.min(index + searchTerm.length + 15, searchMatch.length)) + suffix;
+        return prefix + searchMatch.substring(start, end) + suffix;
     }
 }
 

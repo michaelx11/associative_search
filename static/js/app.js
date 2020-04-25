@@ -114,7 +114,7 @@ function formatSingleChain(chain) {
         'Synonym': '[{2}] is a synonym of [{0}]',
         'WikiArticleStem': 'article [{2}] contains article [{1}] which stem-matched [{0}]',
         'WikiArticleExact': 'article [{2}] contains [{1}]',
-        'WikiAllStem': 'article [{2}] has table/list item or article [{2}] which stem-matched [{0}]',
+        'WikiAllStem': 'article [{2}] has table/list item or article [{1}] which stem-matched [{0}]',
     };
     var explanations = [];
     var finalResult = "";

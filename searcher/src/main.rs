@@ -155,7 +155,7 @@ fn sum_subentries(map_of_maps: &AssociationDict) -> usize {
 
 fn construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) -> Vec<HashMap<String, Vec<String>>> {
     let mut all_results: Vec<HashMap<String, Vec<String>>> = Vec::new();
-    let ARBITRARY_THRESHOLD = 100;
+    let ARBITRARY_THRESHOLD = 50;
     let mut num_processed = 0;
     let last_association_dict = query.association_dicts.last().unwrap();
     for score_pair in scored_pairs {

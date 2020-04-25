@@ -80,6 +80,18 @@ fn find_associations(search_set: &[String], norm_index: &Arc<impl Searchable>, t
     return association_dict;
 }
 
+fn find_associations_norm(search_set: &[String], norm_index: &Arc<impl Searchable>) -> AssociationDict {
+    let mut association_dict: AssociationDict = HashMap::new();
+    for term in search_set {
+        let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
+        let norm_results = norm_index.search(&term, 1, false);
+        for (search_child, search_match) in norm_results {
+            entry.insert(search_child.to_string(), SearchMatch{search_term: term.to_string(), search_match: search_match.to_string()});
+        }
+    }
+    return association_dict;
+}
+
 fn find_synonym_associations(search_set: &[String], index: &Arc<synonym_index::SynonymIndex>) -> AssociationDict {
     let mut association_dict: AssociationDict = HashMap::new();
     for term in search_set {
@@ -223,8 +235,7 @@ fn process_query(mut query_raw: Query,
             },
             QueryStage::WikiArticleStem => {
                 if query.association_dicts.len() == 0 {
-                    // TODO: fix this double index hack
-                    association_dict.extend(find_associations(&query.query_terms[..], &norm_index, &norm_index));
+                    association_dict.extend(find_associations_norm(&query.query_terms[..], &norm_index));
                     query.association_dicts.push(association_dict);
                 } else {
                     let latest_associations = &query.association_dicts.last().unwrap();

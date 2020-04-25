@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Associative Searcher</title>
+  </head>
+  <script type="application/javascript" src="/js/app.js"></script>
+  <link rel = "stylesheet" type = "text/css" href = "/css/main.css" />
+  <body>
+  <div class="row">
+    <div class="column">
+      <div>
+        <h3>
+          1. Search Terms
+        </h3>
+        <p>
+        Write some comma-separated terms that you want to find
+        associations for.
+        </p>
+        <span>
+          <button onclick="fillSynonymDemo()">
+            synonym demo
+          </button>
+          <button onclick="fillHomophoneDemo()">
+            homophone demo
+          </button>
+          <button onclick="fillOneStageDemo()">
+            one stage demo
+          </button>
+          <button onclick="fillTwoStageDemo()">
+            two stage demo
+          </button>
+        </span>
+        <textarea id="searchTermsArea"></textarea>
+      </div>
+      <div>
+        <h3>
+          2. Search Stages
+        </h3>
+        <p>
+        Click buttons to add search stages to execute in order. Note that stages exponentially grow the search set, try to only use a few.
+        </p>
+        <span>
+          <button onclick="addStage('WikiArticleStem')">
+            Wiki Sub-Articles (Stemmed)
+          </button>
+          <button onclick="addStage('WikiArticleExact')">
+            Wiki Sub-Articles (Exact)
+          </button>
+          <button onclick="addStage('WikiAllStem')">
+            Wiki Sub-Items (Stemmed)
+          </button>
+          <button onclick="addStage('Synonym')">
+            Synonym
+          </button>
+          <button onclick="addStage('Homophone')">
+            Homophone
+          </button>
+        </span>
+        <span>
+        <button onclick="removeStage()">
+          Remove Last Stage
+        </button>
+        </span>
+        <textarea id="searchStagesArea"></textarea>
+      </div>
+      <div>
+        <h3>
+          3. Flavortext for Scoring
+          <span>
+            <button onclick="clearFlavortext()">
+              clear
+            </button>
+          </span>
+        </h3>
+        <p>This is optional, leave blank to not use</p>
+        <textarea id="flavortextArea"></textarea>
+      </div>
+      <div>
+        <button onclick="executeQuery()">
+          Run Query
+        </button>
+      </div>
+    </div>
+    <div class="dumpcolumn">
+      <h2 id='waitingAlert' style="display:none;">Calculating...</h2>
+      <pre id='debugArea'>
+      </pre>
+    </div>
+  </div>
+  </body>
+</html>

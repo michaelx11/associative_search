@@ -88,13 +88,83 @@ function clearFlavortext() {
     flavortextArea.textContent = '';
 }
 
-function handleResponse(responseText) {
-    var response_object = JSON.parse(responseText);
-    let displayArea = document.getElementById("displayArea");
-    if (response_object['error']) {
-        clearAndFillDisplayArea(response_object['error']);
+function truncateSearchMatch(searchTerm, searchMatch) {
+    let index = searchMatch.indexOf(searchTerm);
+    if (index == -1) {
+        return searchMatch.substring(0, 30);
     } else {
-        clearAndFillDisplayArea(responseText);
+        let start = index - 15;
+        let end = index + searchTerm.length + 15;
+        var prefix = '';
+        var suffix = '';
+        if (start > 0) {
+            prefix = '...';
+        }
+        if (end < searchMatch.length) {
+            suffix = '...'
+        }
+        return prefix + searchMatch.substring(Math.max(0, index - 15), Math.min(index + searchTerm.length + 15, searchMatch.length)) + suffix;
+    }
+}
+
+function formatSingleChain(chain) {
+    let EXPLANATIONS = {
+        'Homophone': '[{2}] is a homophone of [{0}]',
+        'Synonym': '[{2}] is a synonym of [{0}]',
+        'WikiArticleStem': 'article [{2}] contains article [{1}] which stem-matched [{0}]',
+        'WikiArticleExact': 'article [{2}] contains [{1}]',
+        'WikiAllStem': 'article [{2}] has table/list item or article [{2}] which stem-matched [{0}]',
+    };
+    var explanations = [];
+    var finalResult = "";
+    for (i = 0; i < chain.length; i += 4) {
+        let stage = chain[i];
+        let searchTerm = chain[i+1];
+        let searchMatch = truncateSearchMatch(searchTerm, chain[i+2]);
+        let searchResult = chain[i+3];
+        finalResult = searchResult;
+        let template = EXPLANATIONS[stage];
+        let explanationString = template.replace('{0}', searchTerm).replace('{1}', searchMatch).replace('{2}', searchResult);
+        explanations.push(explanationString);
+    }
+    return {
+        'finalAssociation': finalResult,
+        'explanations': explanations.reverse()
+    }
+}
+
+function formatResponse(responseArray) {
+    // General format is a list of dictionaries
+    // search_term => list of steps
+    // where each step is [StageName, search_term, search_match, result]
+    var pieces = [];
+    for (var i = 0; i < responseArray.length; i++) {
+        let result = responseArray[i];
+        var lines = []
+        var association = "";
+        for (var key in result) {
+            let processedChain = formatSingleChain(result[key]);
+            // All associatios will be the same
+            if (processedChain['finalAssociation']) {
+                association = processedChain['finalAssociation'];
+                lines.push("- " + processedChain['explanations'].join(' <= '));
+            } else {
+                lines.push("- nothing found for term: [" + key + "]");
+            }
+        }
+        var finalString = "[" + association + "]\n" + lines.join("\n");
+        pieces.push(finalString);
+    }
+    clearAndFillDisplayArea(pieces.join("\n\n"));
+}
+
+function handleResponse(responseText) {
+    var responseObject = JSON.parse(responseText);
+    let displayArea = document.getElementById("displayArea");
+    if (responseObject['error']) {
+        clearAndFillDisplayArea(responseObject['error']);
+    } else {
+        formatResponse(responseObject)
     }
 }
 

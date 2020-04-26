@@ -2,8 +2,10 @@ The inspiration here is to create a tool that can handle the following puzzle ty
 
 # Run Instructions
 
+Warning: This application takes ~20 GB of disk space and ~30 GB of memory to run. It's best run in a cloud environment (GCE n1-highmem-4 or n1-highmem-8)
+
 1. Install rust: https://www.rust-lang.org/tools/install
-2. Download and unzip two files to top-level (TODO: add instructions to reconstruct from wikipedia dump directly)
+2. Download and unzip two files (13GB) to top-level (TODO: add instructions to reconstruct from wikipedia dump directly)
 - https://storage.googleapis.com/michaelx_wikipedia_dumps/big_table_index.txt.tar.gz
 - https://storage.googleapis.com/michaelx_wikipedia_dumps/big_norm_index.txt.tar.gz
 3. cd searcher && cargo build --release

@@ -1,5 +1,18 @@
 The inspiration here is to create a tool that can handle the following puzzle types:
 
+# Run Instructions
+
+1. Install rust: https://www.rust-lang.org/tools/install
+2. Download these two files to top-level (TODO: add instructions to reconstruct from wikipedia dump directly)
+- https://storage.googleapis.com/michaelx_wikipedia_dumps/big_table_index.txt.tar.gz
+- https://storage.googleapis.com/michaelx_wikipedia_dumps/big_norm_index.txt.tar.gz
+3. cd searcher && cargo build --release
+4. from repo top-level: `./searcher/target/release/searcher [port number e.g. 7777]`
+- NOTE 1: the server will create *.fst and *.map files taking about 5GB of disk space
+- NOTE 2: the server uses 29.6 GB of memory by default, you can reduce this by going into searcher/src/main.rs and removing indexes and stuff in a hacky way
+
+# Musings
+
 1. A list of pairs, each item in a pair is part of a movie title or something similar
 2. All the items in the list appear in Sci-Fi Movies
 3. Brick and Mortar Mortar and Pestle

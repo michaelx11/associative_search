@@ -506,16 +506,12 @@ fn handle_connection(mut stream: TcpStream,
 fn main() {
     // first arg: filename, remaining args go into search set
     let args: Vec<String> = env::args().collect();
-    if args.len() < 3 {
-        eprintln!("Usage: ./searcher [filename] [search set size] [item1] [item2] ...");
+    if args.len() < 2 {
+        eprintln!("Usage: ./searcher [port]");
         return;
     }
-    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
-    let filename = &args[1];
-    let threshold = args[2].parse::<usize>().unwrap();
-    // Search set is a list of search items
-    let search_set = &args[3..args.len()];
-    eprintln!("filename: {:?}, threshold: {:?}, search set: {:?}", filename, threshold, search_set);
+    let port = &args[1];
+    let listener = TcpListener::bind(format!("{}:{}", "127.0.0.1", port)).unwrap();
     let table_index_filename = "big_table_index.txt";
     let norm_index_filename = "big_norm_index.txt";
     let synonym_index_filename = "moby_words.txt";

@@ -8,9 +8,8 @@ use std::thread;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
-use std::io::{self, BufRead, Read, Write};
-use std::path::Path;
-use std::time::{Duration, Instant};
+use std::io::{Read, Write};
+use std::time::{Instant};
 use std::sync::Arc;
 use std::net::TcpStream;
 use std::net::TcpListener;
@@ -55,14 +54,6 @@ struct SearchMatch {
 }
 
 type AssociationDict = HashMap<String, HashMap<String, SearchMatch>>;
-
-// The output is wrapped in a Result to allow matching on errors
-// Returns an Iterator to the Reader of the lines of the file.
-fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
-where P: AsRef<Path>, {
-    let file = File::open(filename)?;
-    Ok(io::BufReader::new(file).lines())
-}
 
 fn find_associations(search_set: &[String], norm_index: &Arc<impl Searchable>, table_index: &Arc<impl Searchable>) -> AssociationDict {
     let mut association_dict: AssociationDict = HashMap::new();
@@ -111,7 +102,7 @@ fn subfind_associations(associations: &AssociationDict, norm_index: &Arc<impl Se
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-        for (orig_search_child, orig_search_match) in subassociations.iter() {
+        for (orig_search_child, _orig_search_match) in subassociations.iter() {
 
             let norm_results = norm_index.search(orig_search_child, 0, true);
             for (search_child, search_match) in norm_results {
@@ -128,7 +119,7 @@ fn subfind_synonyms(associations: &AssociationDict, index: &Arc<synonym_index::S
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-        for (orig_search_child, orig_search_match) in subassociations.iter() {
+        for (orig_search_child, _orig_search_match) in subassociations.iter() {
 
             let synonym_results = synonym_index::search_synonym_index(&orig_search_child, index);
             for (search_child, search_match) in synonym_results {
@@ -145,7 +136,7 @@ fn subfind_associations_map(associations: &AssociationDict, norm_index: &Arc<imp
     // Iterate through items in search set
     for (term, subassociations) in associations.iter() {
         let entry = association_dict.entry(term.to_string()).or_insert_with(HashMap::new);
-        for (orig_search_child, orig_search_match) in subassociations.iter() {
+        for (orig_search_child, _orig_search_match) in subassociations.iter() {
 
             // search returns <result entry, what matched that entry's key>
             // since this is subfind we do 0 stemming and include the whole string
@@ -167,7 +158,8 @@ fn sum_subentries(map_of_maps: &AssociationDict) -> usize {
 
 fn construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) -> Vec<HashMap<String, Vec<String>>> {
     let mut all_results: Vec<HashMap<String, Vec<String>>> = Vec::new();
-    let ARBITRARY_THRESHOLD = 50;
+    // TODO: allow this to be user specified?
+    let arbitrary_threshold = 50;
     let mut num_processed = 0;
     let last_association_dict = query.association_dicts.last().unwrap();
     for score_pair in scored_pairs {
@@ -178,9 +170,9 @@ fn construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) -> Vec<HashMap<
             let item_string = item.to_string();
             let mut current_association = &score_pair.association;
             match last_association_dict[item].get(&score_pair.association) {
-                Some(v) => {
+                Some(_v) => {
                     // Start iterative construction
-                    let mut current_match = v;
+                    let mut current_match;
                     let num_stages = query.association_dicts.len();
                     for stage_num in (0..num_stages).rev() {
                         current_match = &query.association_dicts.get(stage_num).unwrap()[item][current_association];
@@ -198,7 +190,7 @@ fn construct_chains(query: &Query, scored_pairs: Vec<ScorePair>) -> Vec<HashMap<
         num_processed += 1;
         println!("{}: {}: {:?}", score_pair.score, &score_pair.association, match_chains);
         all_results.push(match_chains);
-        if num_processed > ARBITRARY_THRESHOLD {
+        if num_processed > arbitrary_threshold {
             eprintln!("Terminating early at score: {}", score_pair.score);
             break;
         }
@@ -212,7 +204,7 @@ fn process_query(mut query_raw: Query,
                  syn_index: Arc<synonym_index::SynonymIndex>,
                  homophone_index: Arc<synonym_index::SynonymIndex>) -> String {
     let query_start = Instant::now();
-    let mut query = &mut query_raw;
+    let query = &mut query_raw;
     for stage in query.stages.iter() {
         let mut association_dict: AssociationDict = HashMap::new();
         if query.association_dicts.len() > 0 {
@@ -282,7 +274,7 @@ fn process_query(mut query_raw: Query,
     for item in query.query_terms.iter() {
         match last_association_dict.get(item) {
             Some(entry) => {
-                for (key, value) in entry {
+                for (key, _) in entry {
                     let key_string = key.to_string();
                     association_count_dict.entry(key_string).and_modify(|e| {*e += 1}).or_insert(1);
                 }
@@ -292,7 +284,7 @@ fn process_query(mut query_raw: Query,
     }
     // Stem the flavortext
     let mut flavortext_set: HashSet<String> = HashSet::new();
-    let mut use_flavortext_filter = false;
+    let use_flavortext_filter;
     match &query.flavortext {
         Some(flavortext) => {
             // max stem group 1 (word by word) and do not include the entire text (false)
@@ -354,33 +346,6 @@ fn process_query(mut query_raw: Query,
     scored_pairs.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
     println!("Total scored associations: {}", scored_pairs.len());
     return json!(construct_chains(&query, scored_pairs)).to_string();
-}
-
-fn parse_interactive_query(query_terms_str: &str, query_stages_str: &str, flavortext_str: &str) -> Query {
-    // Get query set, split by ","
-    let mut query_terms: Vec<String> = Vec::new();
-    for term in query_terms_str.split(",") {
-        query_terms.push(term.to_string());
-    }
-    let mut stages: Vec<QueryStage> = Vec::new();
-    for term in query_stages_str.split(",") {
-        match term {
-            "WikiAllStem" => stages.push(QueryStage::WikiAllStem),
-            "WikiArticleStem" => stages.push(QueryStage::WikiArticleStem),
-            "WikiArticleExact" => stages.push(QueryStage::WikiArticleExact),
-            "Synonym" => stages.push(QueryStage::Synonym),
-            "Homophone" => stages.push(QueryStage::Homophone),
-            _ => {}
-        }
-    }
-    let max_size: usize = 100000;
-    let association_dicts: Vec<AssociationDict> = Vec::new();
-    let mut flavortext: Option<String> = None;
-    if flavortext_str.len() > 0 {
-        flavortext = Some(flavortext_str.to_string());
-    }
-    println!("num stages: {}", stages.len());
-    return Query{query_terms, stages, max_size, association_dicts, flavortext};
 }
 
 fn parse_http_query(body: &mut [u8]) -> Query {
@@ -449,21 +414,21 @@ fn handle_connection(mut stream: TcpStream,
                     Some("/") => {
                         let mut file = File::open("static/index.html").unwrap();
                         let mut buffer = String::new();
-                        file.read_to_string(&mut buffer);
+                        file.read_to_string(&mut buffer).unwrap();
                         stream.write(format!("{}{}", response, buffer).as_bytes()).unwrap();
                         stream.flush().unwrap();
                     },
                     Some("/js/app.js") => {
                         let mut file = File::open("static/js/app.js").unwrap();
                         let mut buffer = String::new();
-                        file.read_to_string(&mut buffer);
+                        file.read_to_string(&mut buffer).unwrap();
                         stream.write(format!("{}{}", response, buffer).as_bytes()).unwrap();
                         stream.flush().unwrap();
                     },
                     Some("/css/main.css") => {
                         let mut file = File::open("static/css/main.css").unwrap();
                         let mut buffer = String::new();
-                        file.read_to_string(&mut buffer);
+                        file.read_to_string(&mut buffer).unwrap();
                         stream.write(format!("{}{}", response, buffer).as_bytes()).unwrap();
                         stream.flush().unwrap();
                     },

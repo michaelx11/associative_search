@@ -9,10 +9,10 @@ use std::collections::HashSet;
  */
 pub fn generate_stems(term: &str, k: usize, include_whole: bool) -> Vec<String> {
     lazy_static! {
-        static ref nonalpha_re: Regex = Regex::new(r"[^\w\s]").unwrap(); 
+        static ref NONALPHA_RE: Regex = Regex::new(r"[^\w\s]").unwrap(); 
     }
     // Non-alphanumeric characters are removed
-    let alpha_only = nonalpha_re.replace_all(term, "");
+    let alpha_only = NONALPHA_RE.replace_all(term, "");
     let alpha_only_lower = alpha_only.to_lowercase();
     // split by whitespace
     let split = alpha_only_lower.split_whitespace();

@@ -3,21 +3,13 @@ extern crate memmap;
 extern crate serde_json;
 extern crate simd_json; 
 
-use std::collections::{BTreeMap, VecDeque, HashMap};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io;
-use std::io::{BufRead,Write};
+use std::io::{BufRead};
 use std::path::Path;
-use std::time::{Duration, Instant};
-use memmap::Mmap;
+use std::time::Instant;
 
-use fst::{IntoStreamer, Streamer, Map, MapBuilder, Automaton};
-use fst::automaton::{Union, Str};
-
-use serde_json::Value;
-use serde_json::json;
-
-use super::stemmer;
 
 // The output is wrapped in a Result to allow matching on errors
 // Returns an Iterator to the Reader of the lines of the file.
@@ -37,8 +29,8 @@ pub struct SynonymIndex {
  */
 pub fn generate_synonym_index(file_path: &str) -> SynonymIndex {
 
-    let mut line_vecs: Vec<Vec<String>> = Vec::new();
-    let mut index: HashMap<String, Vec<usize>> = HashMap::new();
+    let line_vecs: Vec<Vec<String>> = Vec::new();
+    let index: HashMap<String, Vec<usize>> = HashMap::new();
     let mut synonym_index = SynonymIndex{line_vecs, index};
     let mut counter = 0;
     let process_start = Instant::now();
@@ -51,7 +43,7 @@ pub fn generate_synonym_index(file_path: &str) -> SynonymIndex {
                     all_words.push(word.to_ascii_lowercase());
                 }
                 let root_word = all_words.first().unwrap();
-                for word in &all_words[1..] {
+                for _word in &all_words[1..] {
                     let index_entry = synonym_index.index.entry(root_word.to_string()).or_insert_with(Vec::new);
                     index_entry.push(counter);
                 }

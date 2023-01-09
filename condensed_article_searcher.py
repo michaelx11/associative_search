@@ -27,13 +27,13 @@ def sha256digest(string):
 
 
 title_dict = defaultdict(lambda: set())
+item_dict = defaultdict(lambda: set())
 longest_title = ''
 longest_record = None
 total_list_items = 0
 def check_record(record, cc):
     global title_dict
-    global longest_title
-    global longest_record
+    global item_dict
     global total_list_items
 #    title_sha = sha256digest(record['title'])
     # Parse all [[subreferences]] contained in article
@@ -46,14 +46,15 @@ def check_record(record, cc):
     title_hash = sha256digest(title)
     if not title_hash.startswith(cc):
         return
-    print('title: {}'.format(title))
+#    print('title: {}'.format(title))
     for match in re.finditer(markup_link_pattern, page):
         title_dict[match.group(1).strip().lower()].add(title)
     for match in re.finditer(list_item_pattern, page):
         # Check to see if the match would also contain markup link
         if markup_link_pattern.match(page):
             continue
-        print('li: {}'.format(match.group(2).encode('utf-8')))
+#        print('li: {}'.format(match.group(2).encode('utf-8')))
+        item_dict[match.group(2)].add(title)
         total_list_items += 1
     for match in re.finditer(table_row_pattern, page):
         raw_row = match.group(1)
@@ -71,28 +72,18 @@ def check_record(record, cc):
         normalized_components = []
         for comp in components:
             norm = comp.strip().lower()
-#            if norm.startswith('{{'):
-#                continue
+            if len(norm) == 0:
+                continue
+            item_dict[norm].add(title)
             normalized_components.append(norm)
-#            split_bar = norm.split('|')
-#            if len(split_bar) == 2:
-#                normalized_components.append(split_bar[1])
-#            else:
-#                normalized_components.append(norm)
-        print(normalized_components)
-#        import pdb; pdb.set_trace()
-#        print(match.group(2), match.group(0))
-#        import pdb; pdb.set_trace()
-
-
-#    if 'fred flintstone' in record['title'].lower():
-#        print(record)
+#        print(normalized_components)
 
 
 fields = ['title', 'categories', 'page']
 count = 0
 for cc in '0123456789abcdef':
     title_dict = defaultdict(lambda: set())
+    item_dict = defaultdict(lambda: set())
     print("processing: {}".format(cc))
     with open('condensed.csv', 'r') as ff:
         i = 0
@@ -108,7 +99,7 @@ for cc in '0123456789abcdef':
             if count % 1000000 == 0 and i == 0:
                 print('checked: {}'.format(count))
                 print('total list items: {}'.format(total_list_items))
-#    with open('indexes/{}.txt'.format(cc), 'w') as index_file:
-#        for t_title in sorted(title_dict):
-#            index_file.write('{}\n'.format(json.dumps({'t': t_title, 'as': list(title_dict[t_title])})))
+    with open('table_indexes/{}.txt'.format(cc), 'w') as index_file:
+        for t_title in sorted(item_dict):
+            index_file.write('{}\n'.format(json.dumps({'t': t_title, 'as': list(item_dict[t_title])})))
 

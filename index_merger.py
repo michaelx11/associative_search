@@ -12,7 +12,7 @@ global_index = deque()
 
 # open all index files
 for c in hex_alpha:
-    index_files.append(open(os.path.join('indexes', '{}.txt'.format(c)), 'r'))
+    index_files.append(open(os.path.join('table_indexes', '{}.txt'.format(c)), 'r'))
 
 current_set = [None] * len(index_files)
 
@@ -23,7 +23,7 @@ def parse_line(line):
 for i, ff in enumerate(index_files):
     current_set[i] = parse_line(ff.next())
 
-final_index_file = open('big_index.txt', 'w')
+final_index_file = open('big_table_index.txt', 'w')
 current_item = None
 counter = 0
 while True:

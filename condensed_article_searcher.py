@@ -104,7 +104,7 @@ for cc in '0123456789abcdef':
                 print('checked: {}'.format(count))
                 print('total list items: {}'.format(total_list_items))
     index_folder = 'norm_table_indexes' if IS_NORM else 'table_indexes'
-    if os.path.isdir(index_folder):
+    if not os.path.isdir(index_folder):
         os.mkdir(index_folder)
     with open('{}/{}.txt'.format(index_folder, cc), 'w') as index_file:
         for t_title in sorted(item_dict):

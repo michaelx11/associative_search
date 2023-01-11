@@ -1,3 +1,4 @@
+import os
 import json 
 import re
 import hashlib
@@ -18,7 +19,9 @@ table_row_pattern = re.compile(r'^\|-\n((\|\s+[^\n]+)+)$', re.I | re.M)
 
 style_eliminator_pattern = re.compile(r'^\|\s+style=[^|]+\|(.+)$', re.I)
 
-
+# NOTE: flag to control whether we generate "norm" indexes or full indexes
+# where a norm index just uses list items and table items which are more reliable and structured
+IS_NORM = False
 
 def sha256digest(string):
     sha256 = hashlib.sha256()
@@ -47,11 +50,12 @@ def check_record(record, cc):
     if not title_hash.startswith(cc):
         return
 #    print('title: {}'.format(title))
-    for match in re.finditer(markup_link_pattern, page):
-        title_dict[match.group(1).strip().lower()].add(title)
+    if not IS_NORM:
+        for match in re.finditer(markup_link_pattern, page):
+            title_dict[match.group(1).strip().lower()].add(title)
     for match in re.finditer(list_item_pattern, page):
         # Check to see if the match would also contain markup link
-        if markup_link_pattern.match(page):
+        if markup_link_pattern.match(match.group(2)):
             continue
 #        print('li: {}'.format(match.group(2).encode('utf-8')))
         item_dict[match.group(2)].add(title)
@@ -99,7 +103,10 @@ for cc in '0123456789abcdef':
             if count % 1000000 == 0 and i == 0:
                 print('checked: {}'.format(count))
                 print('total list items: {}'.format(total_list_items))
-    with open('table_indexes/{}.txt'.format(cc), 'w') as index_file:
+    index_folder = 'norm_table_indexes' if GENERATE_NORM else 'table_indexes'
+    if os.path.isdir(index_folder):
+        os.mkdir(index_folder)
+    with open('{}/{}.txt'.format(index_folder, cc), 'w') as index_file:
         for t_title in sorted(item_dict):
             index_file.write('{}\n'.format(json.dumps({'t': t_title, 'as': list(item_dict[t_title])})))
 

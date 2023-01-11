@@ -103,7 +103,7 @@ for cc in '0123456789abcdef':
             if count % 1000000 == 0 and i == 0:
                 print('checked: {}'.format(count))
                 print('total list items: {}'.format(total_list_items))
-    index_folder = 'norm_table_indexes' if GENERATE_NORM else 'table_indexes'
+    index_folder = 'norm_table_indexes' if IS_NORM else 'table_indexes'
     if os.path.isdir(index_folder):
         os.mkdir(index_folder)
     with open('{}/{}.txt'.format(index_folder, cc), 'w') as index_file:

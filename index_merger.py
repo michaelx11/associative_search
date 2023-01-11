@@ -14,7 +14,7 @@ global_index = deque()
 # where a norm index just uses list items and table items which are more reliable and structured
 IS_NORM = False
 
-index_folder = 'norm_table_indexes' if GENERATE_NORM else 'table_indexes'
+index_folder = 'norm_table_indexes' if IS_NORM else 'table_indexes'
 
 if not os.path.isdir(index_folder):
     raise Exception('Missing index folder: {}'.format(index_folder))

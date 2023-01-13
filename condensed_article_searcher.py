@@ -50,16 +50,18 @@ def check_record(record, cc):
     if not title_hash.startswith(cc):
         return
 #    print('title: {}'.format(title))
+    for match in re.finditer(markup_link_pattern, page):
+        title_dict[match.group(1).strip().lower()].add(title)
+    # Norm excludes sub item lists (or "- anything" items) which can be
+    # entire paragraphs and are extremely noisy
     if not IS_NORM:
-        for match in re.finditer(markup_link_pattern, page):
-            title_dict[match.group(1).strip().lower()].add(title)
-    for match in re.finditer(list_item_pattern, page):
-        # Check to see if the match would also contain markup link
-        if markup_link_pattern.match(match.group(2)):
-            continue
-#        print('li: {}'.format(match.group(2).encode('utf-8')))
-        item_dict[match.group(2)].add(title)
-        total_list_items += 1
+        for match in re.finditer(list_item_pattern, page):
+            # Check to see if the match would also contain markup link
+            if markup_link_pattern.match(match.group(2)):
+                continue
+#            print('li: {}'.format(match.group(2).encode('utf-8')))
+            item_dict[match.group(2)].add(title)
+            total_list_items += 1
     for match in re.finditer(table_row_pattern, page):
         raw_row = match.group(1)
         # could start with '| style="'

@@ -32,7 +32,7 @@ def parse_line(line):
 for i, ff in enumerate(index_files):
     current_set[i] = parse_line(ff.next())
 
-filename = 'norm_table_index.txt' if IS_NORM else 'big_table_index.txt'
+filename = 'big_norm_index.txt' if IS_NORM else 'big_table_index.txt'
 final_index_file = open(filename, 'w')
 current_item = None
 counter = 0

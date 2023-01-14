@@ -27,7 +27,6 @@ def hms_string(sec_elapsed):
 
 
 def strip_tag_name(t):
-    t = elem.tag
     idx = k = t.rfind("}")
     if idx != -1:
         t = t[idx + 1:]
@@ -57,8 +56,22 @@ with codecs.open(pathArticles, "w", ENCODING) as articlesFH, \
     redirectWriter.writerow(['id', 'title', 'redirect'])
     templateWriter.writerow(['id', 'title'])
 
+    i = 0
+    target = 0
     for event, elem in etree.iterparse(pathWikiXML, events=('start', 'end')):
         tname = strip_tag_name(elem.tag)
+        import xml
+        if i > target - 500 or True:
+            if len(list(elem)) > 1:
+                for u in elem:
+                    tt = strip_tag_name(u.tag)
+                    if tt == 'title':
+                        if u.text == 'Chile at the 2004 Summer Olympics':
+                            xml.etree.ElementTree.dump(elem)
+                            import pdb; pdb.set_trace()
+        if i > target + 500 and False:
+            break
+        i+=1
 
         if event == 'start':
             if tname == 'page':
@@ -75,6 +88,8 @@ with codecs.open(pathArticles, "w", ENCODING) as articlesFH, \
                 title = elem.text
             elif tname == 'id' and not inrevision:
                 id = int(elem.text)
+#                if id == 18350195:
+#                    import pdb; pdb.set_trace()
             elif tname == 'redirect':
                 redirect = elem.attrib['title']
             elif tname == 'ns':
@@ -82,15 +97,17 @@ with codecs.open(pathArticles, "w", ENCODING) as articlesFH, \
             elif tname == 'page':
                 totalCount += 1
 
+#                if id == 18350195:
+#                    import pdb; pdb.set_trace()
                 if ns == 10:
                     templateCount += 1
-                    templateWriter.writerow([id, title])
+#                    templateWriter.writerow([id, title])
                 elif len(redirect) > 0:
                     articleCount += 1
-                    articlesWriter.writerow([id, title, redirect])
+#                    articlesWriter.writerow([id, title, redirect])
                 else:
                     redirectCount += 1
-                    redirectWriter.writerow([id, title, redirect])
+#                    redirectWriter.writerow([id, title, redirect])
 
                 # if totalCount > 100000:
                 #  break

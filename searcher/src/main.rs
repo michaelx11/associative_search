@@ -400,7 +400,7 @@ fn handle_connection(mut stream: TcpStream,
     let mut buffer = [0; 256 * 1024];
     stream.read(&mut buffer).unwrap();
 
-    let mut headers = [httparse::EMPTY_HEADER; 16];
+    let mut headers = [httparse::EMPTY_HEADER; 32];
     let mut req = httparse::Request::new(&mut headers);
     let res = req.parse(&buffer).unwrap();
     if !res.is_partial() {

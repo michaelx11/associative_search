@@ -598,7 +598,7 @@ class Extractor(object):
         """
         :param out: a memory file.
         """
-        logging.info('%s\t%s', self.id, self.title)
+#        logging.info('%s\t%s', self.id, self.title)
 
         # Separate header from text with a newline.
         if options.toHTML:
@@ -2921,6 +2921,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
         template_load_elapsed = default_timer() - template_load_start
         logging.info("Loaded %d templates in %.1fs", len(options.templates), template_load_elapsed)
 
+    total_bytes = 0
     # process pages
     logging.info("Starting page extraction from %s.", input_file)
     extract_start = default_timer()
@@ -2962,27 +2963,90 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
         extractor.start()
         workers.append(extractor)
 
+#    title_set = set(['manning', 'bradshaw', 'brady', 'montana'])
+#    title_set = set(['hannibal', 'suntzu', 'rommel', 'saladin'])
+
+    title_set = set(['tom bowler', 'red devil', 'agate', 'cats eye'])
+    from collections import defaultdict
+    association_dicts = defaultdict(lambda: {})
     # Mapper process
+    logging.info("mapper process")
     page_num = 0
+    import json
+    def escape_newlines(ss):
+        return json.dumps(ss)
+
+    output_csv = open('condensed.csv', 'w')
+
     for page_data in pages_from(input):
         id, revid, title, ns, catSet, page = page_data
         if keepPage(ns, catSet, page):
+            normalized_catset = set(map(lambda x: x.lower(), catSet))
+#            total_bytes += len(title)
+#            total_bytes += len(str(catSet))
+#            total_bytes += len(page)
+            total_bytes += len('{},{},{}'.format(
+                escape_newlines(title),
+                escape_newlines(list(normalized_catset)),
+                escape_newlines(page)))
+            output_csv.write('{}\n{}\n{}\n'.format(
+                  escape_newlines(title),
+                  escape_newlines(list(catSet)),
+                  escape_newlines(''.join(page))))
+            for tit in title_set:
+                if tit.lower() in title.lower():
+                    association_dicts[tit][title] = normalized_catset
+                    logging.info(title + ' ' + str(sorted(list(catSet))))
+                    logging.info('important bytes: {}'.format(total_bytes))
+
+#            for y in map(lambda x: x.lower(), catSet):
+#                if 'painter' in y:
+#                    logging.info(title + ' ' + str(sorted(list(catSet))))
+#                    break
             # slow down
             delay = 0
             if spool_length.value > max_spool_length:
                 # reduce to 10%
                 while spool_length.value > max_spool_length/10:
+                    logging.info('SLEEPING')
+#                    import pdb; pdb.set_trace()
                     time.sleep(10)
                     delay += 10
             if delay:
                 logging.info('Delay %ds', delay)
             job = (id, revid, title, page, page_num)
-            jobs_queue.put(job) # goes to any available extract_process
+#            jobs_queue.put(job) # goes to any available extract_process
+            if page_num % 100000 == 0:
+                logging.info("page num: %d" % page_num)
+                # Do a check for overlapping categories
+                all_cats = defaultdict(set)
+                cat_dict = defaultdict(lambda: {})
+                intersection_set = set()
+#                import pdb; pdb.set_trace()
+                for tit, sets in association_dicts.iteritems():
+                    for stitle, ss in sets.iteritems():
+                        all_cats[tit].update(ss)
+                        intersection_set.update(ss)
+                        for itit in ss:
+                            cat_dict[tit][itit] = stitle
+                # check intersection
+                for tit, settt in all_cats.iteritems():
+                    intersection_set = intersection_set.intersection(settt)
+                if len(intersection_set) > 0:
+                    logging.info("intersecting categories: " + str(intersection_set))
+                    for cate in intersection_set:
+                        logging.info("Category: " + cate)
+                        for tit in association_dicts:
+                            logging.info("{}: {}".format(tit, cat_dict[tit][cate]))
+
             page_num += 1
         page = None             # free memory
+    logging.info("Finishing mapper process")
 
+    output_csv.close()
     input.close()
 
+    logging.info("Signaling termination")
     # signal termination
     for _ in workers:
         jobs_queue.put(None)
@@ -3074,7 +3138,7 @@ def reduce_process(opts, output_queue, spool_length,
     next_page = 0     # sequence numbering of page
     while True:
         if next_page in spool:
-            output.write(spool.pop(next_page).encode('utf-8'))
+#            output.write(spool.pop(next_page).encode('utf-8'))
             next_page += 1
             # tell mapper our load:
             spool_length.value = len(spool)

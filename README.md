@@ -1,19 +1,42 @@
-The inspiration here is to create a tool that can handle the following puzzle types:
+# Associative Search
+
+The goal is to build a tool that can find associations between elements of a set. For example, finding out that all the words in the set belong to movie titles from the 1960's.
+
+Why can't we just use Google? Google will work great if all the elements show up together on some page e.g. "List of Movies for 1960's", but any indirect associations are not so easily recovered.
+
+Example: What do "drugstore" and "urban" have in common? Turns out "drugstore cowboy" and "urban cowboy" are both drama films from the 1980's.
+
+The basic approach is:
+
+1) Index wikipedia (thank you [Nutrimatic](https://nutrimatic.org/) for inspiration and [WikiExtractor](https://github.com/attardi/wikiextractor) for an excellent tool)
+2) Try to find all articles referencing each original term, gathering a set of matching articles for each term.
+3) Look for any common articles shared by a majority of original terms after previous expansion.
+4) If found, return otherwise repeat recursively until desired depth or computation limit.
+
+This search is not terribly efficient and has an aggressive branching factor; however, even sometimes two or three level deep search is enough. Additionally, more selective search modes are provided. Instead of all wiki articles referencing a term we can return just articles that reference a term directly as a link.
 
 # Run Instructions
 
 Warning: This application takes ~20 GB of disk space and ~30 GB of memory to run. It's best run in a cloud environment (GCE n1-highmem-4 or n1-highmem-8)
 
 1. Install rust: https://www.rust-lang.org/tools/install
-2. Download and unzip two files (13GB) to top-level (TODO: add instructions to reconstruct from wikipedia dump directly)
+2a. Download and unzip two files (13GB) to top-level (TODO: add instructions to reconstruct from wikipedia dump directly)
 - https://storage.googleapis.com/michaelx_wikipedia_dumps/big_table_index.txt.tar.gz
 - https://storage.googleapis.com/michaelx_wikipedia_dumps/big_norm_index.txt.tar.gz
+2b. To build indexes from scratch, download the [latest English wikimedia dump](https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2)
+- Run the modified WikiExtractor.py code on it to generate a "condensed.csv" file. This is not a CSV, it's just bad naming.
+- Do the next two steps twice, once with `IS_NORM=False` in both `condensed_article_searcher.py` and `index_merger.py`, then once with `IS_NORM=True`
+- Run `condensed_article_searcher.py`
+- Run `index_merge.py` to end up with a `big_table_index.txt`
+- Repeate the two above with `IS_NORM=True` to get `big_norm_index.txt`
+- The final `big_table_index.txt` and `big_norm_index.txt` files are used by the Rust `searcher` application
 3. cd searcher && cargo build --release
 4. from repo top-level: `./searcher/target/release/searcher [port number e.g. 7777]`
 - NOTE 1: the server will create *.fst and *.map files taking about 5GB of disk space
 - NOTE 2: the server uses 29.6 GB of memory by default, you can reduce this by going into searcher/src/main.rs and removing indexes and stuff in a hacky way
+- NOTE 3: the very first run can take 500+ seconds
 
-# Musings
+# Random Musings
 
 1. A list of pairs, each item in a pair is part of a movie title or something similar
 2. All the items in the list appear in Sci-Fi Movies
@@ -36,7 +59,6 @@ To do this, we need to do the hard work of creating and curating an index of:
 - fast food brand (not done)
 - songs (not done)
 - artists (not done)
-- 
 
 (Questionable value for work)
 Another aspect of this is to pre-curate visual examples of certain things that are relatively
@@ -127,8 +149,6 @@ All words are part of phrases that contain one of TOP,LEFT: http://web.mit.edu/p
 
 Excellent example of pure association: http://web.mit.edu/puzzle/www/2012/puzzles/phantom_of_the_operator/set_theory/ - lots of queries though so needs to be quick with initial results at least
 - consider adding associative relationships if those are pre-known? the goal being to basically solve set_theory automatically
-
-%u0e42%u0e23%u0e07%u0e40%u0e23%u0e35%u0e22%u0e19%u0e1a%u0e49%u0e32%u0e19%u0e1e%u0e23%u0e49%u0e32%u0e27 %u0e15%u0e33%u0e1a%u0e25%u0e22%u0e21 %u0e2d%u0e33%u0e40%u0e20%u0e2d%u0e17%u0e48%u0e32%u0e27%u0e31%u0e07%u0e1c%u0e32 %u0e08%u0e31%u0e07%u0e2b%u0e27%u0e31%u0e14%u0e19%u0e48%u0e32%u0e19
 
 More notes:
 

@@ -10,9 +10,18 @@ index_files = []
 # Global index format is JSON list per line, ["[article]", list[containing articles]]
 global_index = deque()
 
+# NOTE: flag to control whether we generate "norm" indexes or full indexes
+# where a norm index just uses list items and table items which are more reliable and structured
+IS_NORM = False
+
+index_folder = 'norm_table_indexes' if IS_NORM else 'table_indexes'
+
+if not os.path.isdir(index_folder):
+    raise Exception('Missing index folder: {}'.format(index_folder))
+
 # open all index files
 for c in hex_alpha:
-    index_files.append(open(os.path.join('indexes', '{}.txt'.format(c)), 'r'))
+    index_files.append(open(os.path.join(index_folder, '{}.txt'.format(c)), 'r'))
 
 current_set = [None] * len(index_files)
 
@@ -23,7 +32,8 @@ def parse_line(line):
 for i, ff in enumerate(index_files):
     current_set[i] = parse_line(ff.next())
 
-final_index_file = open('big_index.txt', 'w')
+filename = 'big_norm_index.txt' if IS_NORM else 'big_table_index.txt'
+final_index_file = open(filename, 'w')
 current_item = None
 counter = 0
 while True:

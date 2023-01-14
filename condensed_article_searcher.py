@@ -10,8 +10,8 @@ markup_link_pattern = re.compile(r'\[\[([^|\]]{1,256})(\|[^\]]{1,256})?\]\]', re
 # can be 1., - + * for leading items
 # also can have leading spaces
 # but how much of the text do we take? all of it?
-# take until newline seems like a reasonable strategy
-list_item_pattern = re.compile(r'^\s*([*-+]+|\d+\.)\s*([^\n]+)$', re.I | re.M)
+# take until newline seems like a reasonable strategy, or up to 256 chars
+list_item_pattern = re.compile(r'^\s*([*-+]+|\d+\.)\s*([^\n]{4,256})$', re.I | re.M)
 # Table markup parser, goal is to extract only the table items
 # Do the easy thing and just look for |-
 # can either be a single line (|| delimited) or a line for each item (| start)

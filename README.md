@@ -25,13 +25,16 @@ Warning: This application takes ~20 GB of disk space and ~30 GB of memory to run
 - https://storage.googleapis.com/michaelx_wikipedia_dumps/big_norm_index.txt.tar.gz
 2b. To build indexes from scratch, download the [latest English wikimedia dump](https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2)
 - Run the modified WikiExtractor.py code on it to generate a "condensed.csv" file. This is not a CSV, it's just bad naming.
-- Create a `table_indexes` folder and then run `condensed_article_searcher.py`
-- Finally run `index_merge.py` to end up with a `big_table_index.txt`
-- The final `big_table_index.txt` is used by the Rust `searcher` application
+- Do the next two steps twice, once with `IS_NORM=False` in both `condensed_article_searcher.py` and `index_merger.py`, then once with `IS_NORM=True`
+- Run `condensed_article_searcher.py`
+- Run `index_merge.py` to end up with a `big_table_index.txt`
+- Repeate the two above with `IS_NORM=True` to get `big_norm_index.txt`
+- The final `big_table_index.txt` and `big_norm_index.txt` files are used by the Rust `searcher` application
 3. cd searcher && cargo build --release
 4. from repo top-level: `./searcher/target/release/searcher [port number e.g. 7777]`
 - NOTE 1: the server will create *.fst and *.map files taking about 5GB of disk space
 - NOTE 2: the server uses 29.6 GB of memory by default, you can reduce this by going into searcher/src/main.rs and removing indexes and stuff in a hacky way
+- NOTE 3: the very first run can take 500+ seconds
 
 # Random Musings
 
